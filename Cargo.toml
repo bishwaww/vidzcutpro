@@ -12,6 +12,7 @@ members = [
     "crates/vz-presets",
     "crates/vz-ui",
     "crates/vidzcut",
+    "spikes/sinhala",
 ]
 
 [workspace.package]

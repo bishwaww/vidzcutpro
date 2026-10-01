@@ -23,7 +23,7 @@ Think of vidzcut as a small film studio with separate rooms. Each room is a Rust
 └─────┬────┘ └───┬─────┘ └─┬───────┘ └┬─────────┘ └┬─────────┘ └┬──────────┘
       └──────────┴─────────┼──────────┴────────────┴────────────┘
                     ┌──────▼───────┐   ┌────────────┐   ┌────────────┐
-                    │   vz-core    │◄──┤  vz-anim   │   │ vz-presets │
+                    │   vz-core    ├──►│  vz-anim   │   │ vz-presets │
                     │ the project: │   │ keyframes, │   │ effects,   │
                     │ tracks,clips,│   │ easing     │   │ transitions│
                     │ undo, save   │   │            │   │ (data)     │
@@ -85,7 +85,14 @@ Export is the same loop without the audio clock: for each frame number → evalu
 
 ## 6. Where I suggest changing or tightening the spec (please read)
 
-### 6.1 ⚠ The big one: egui and Sinhala
+### 6.1 egui and Sinhala — **spike result (2026-10-02): PASS for display**
+Tested with eframe/egui 0.36.2 and cosmic-text 0.19.0 (`spikes/sinhala`, screenshot `out/sinhala_spike.png`, not committed). With a Sinhala font loaded, **egui draws "ශ්‍රී ලංකාව", "ක්‍රීඩාව", "ඇස් සම්බන්ධ රෝග" correctly (same shapes as cosmic-text)**, in labels and in an editable box. So egui stays (option A) and my worry below was out of date for this version.
+Still to check by hand (needs a Sinhala keyboard; the spike has a `--stay` mode): typing, backspace and cursor movement over joined letters in the egui edit box. If cursor/backspace misbehave on clusters, we write the small custom text-edit widget described below.
+egui has no Sinhala glyphs by itself, so we must **bundle Noto Sans Sinhala** (OFL) and register it as a fallback font (the spike used Windows' Nirmala UI).
+
+<details><summary>Original concern and options (kept for the record)</summary>
+
+### The big one: egui and Sinhala
 `egui` draws its own text with a simple engine that, **as far as I know, does not do "complex script shaping"** (the step that joins Sinhala letters, vowel signs and ්‍ර / ් joiners correctly). English UI text is fine. The problem would be **any place where Sinhala shows up inside the egui interface**: typing Sinhala into the text-clip editor, the caption list editor, project names, font previews.
 Video text is *not* affected: we draw video text ourselves with `cosmic-text` (which does shape Sinhala) in `vz-text`.
 
@@ -95,6 +102,7 @@ Options:
 - **C:** Slint — good shaping, but different licence terms (GPL / royalty-free / commercial). Needs your approval because of the "no GPL without asking" rule.
 
 If the spike shows egui is fine for display and we only need the custom edit widget, we continue with A. I'll report the result with a screenshot before building more UI.
+</details>
 
 ### 6.2 FFmpeg is not installed on this PC, and neither is Rust
 Details in `docs/BUILDING.md`. Short version: I need to install Rust, Microsoft C++ Build Tools, LLVM (for the FFmpeg bindings) and download an **LGPL shared FFmpeg build**. Each is a download — I will ask first.
