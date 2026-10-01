@@ -1,0 +1,10 @@
+[package]
+name = "vz-render"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+vz-core = { path = "../vz-core" }
+vz-anim = { path = "../vz-anim" }

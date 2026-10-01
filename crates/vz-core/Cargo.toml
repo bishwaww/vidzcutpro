@@ -1,0 +1,9 @@
+[package]
+name = "vz-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+vz-anim = { path = "../vz-anim" }

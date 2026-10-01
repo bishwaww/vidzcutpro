@@ -1,0 +1,12 @@
+[package]
+name = "vz-export"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+vz-core = { path = "../vz-core" }
+vz-render = { path = "../vz-render" }
+vz-media = { path = "../vz-media" }
+vz-audio = { path = "../vz-audio" }

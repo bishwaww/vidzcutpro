@@ -1,0 +1,27 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/vz-anim",
+    "crates/vz-core",
+    "crates/vz-media",
+    "crates/vz-render",
+    "crates/vz-text",
+    "crates/vz-vector",
+    "crates/vz-audio",
+    "crates/vz-export",
+    "crates/vz-presets",
+    "crates/vz-ui",
+    "crates/vidzcut",
+]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2024"
+license = "LicenseRef-Proprietary"
+
+[profile.release]
+lto = "thin"
+codegen-units = 4
+
+[profile.dev]
+opt-level = 1

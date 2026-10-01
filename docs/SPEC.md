@@ -466,4 +466,4 @@ Graph editor, motion paths on canvas, parenting/null layers, motion blur, wiggle
 
 ## Spec changes (owner decisions after 2026-10-01)
 
-_(none yet)_
+- 2026-10-02 (owner, Phase 0): tools may be installed (Rust, MSVC Build Tools, LLVM, LGPL FFmpeg). UI toolkit stays **egui**, after a Sinhala spike (fallback options: iced / Slint). Software H.264 fallback = **OpenH264** (licence details to be re-checked and confirmed before release). Gemini auto-captions stay **out of v1** (plugin later). Assistant replies in **simple English**. Project extension stays `.vzp`; a `.vidz` importer comes later.

@@ -1,0 +1,15 @@
+[package]
+name = "vz-ui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+vz-core = { path = "../vz-core" }
+vz-render = { path = "../vz-render" }
+vz-media = { path = "../vz-media" }
+vz-audio = { path = "../vz-audio" }
+vz-text = { path = "../vz-text" }
+vz-vector = { path = "../vz-vector" }
+vz-presets = { path = "../vz-presets" }

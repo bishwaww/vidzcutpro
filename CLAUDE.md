@@ -28,13 +28,19 @@
 - This PC: Windows 11, i5-13420H, RTX 4050 + Intel UHD, 15.6 GB RAM, 125 % display scaling. Installed: git, node, python, winget. **Missing: Rust, MSVC Build Tools, LLVM, FFmpeg.**
 - Waiting for the owner's answers to the Phase 0 decisions (see below), then step 0a.
 
-## Open decisions for the owner (Phase 0)
-1. OK to install Rust + MSVC Build Tools + LLVM + LGPL FFmpeg build (each a download)?
-2. UI toolkit: keep egui after a Sinhala spike (recommended) / iced / Slint? (ARCHITECTURE §6.1)
-3. Software H.264 fallback: OpenH264 (recommended) / separate GPL x264 / hardware-only for v1 (ARCHITECTURE §6.3)
-4. Gemini auto captions from the prototype: leave out of v1 and add later as a plugin (spec says no AI) — confirm.
-5. Project extension `.vzp` (spec) vs `.vidz` (prototype) — plan: `.vzp`, importer for `.vidz` later.
-6. Language of my replies: simple English (spec) or Singlish (prototype habit)?
+## Decisions made by the owner (2026-10-02)
+1. Tools may be installed: Rust, MSVC Build Tools, LLVM, LGPL FFmpeg. ✔
+2. UI toolkit: **egui**, after a Sinhala spike (step 0c); fallback iced/Slint only if the spike fails. ✔
+3. Software H.264 fallback: **OpenH264** (re-check its licence before release; ask owner). ✔
+4. Gemini auto captions: **out of v1**, plugin later. ✔
+5. Project extension `.vzp`; `.vidz` importer later (my default, not objected to). ✔
+6. Replies in **simple English**. ✔
+
+## Toolchain on this PC (installed 2026-10-02)
+- Rust 1.99 stable (MSVC), cargo at `%USERPROFILE%\.cargo\bin` (new shells need it on PATH).
+- VS 2022 Build Tools (C++ workload) at `C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools`.
+- LLVM (libclang) via winget — see Current state for whether it finished.
+- FFmpeg n9.0 **LGPL shared** (BtbN build) in `third_party\ffmpeg` (git-ignored). Matches crate `ffmpeg-next 9.0.0`. Has h264/hevc/av1 nvenc/qsv/amf + libopenh264; no x264/x265 (good).
 
 ## Known issues
 - None yet (no code).
