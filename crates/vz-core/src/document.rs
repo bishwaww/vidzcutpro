@@ -203,6 +203,24 @@ impl Document {
         Ok(id)
     }
 
+    /// Point a media file at a new place on disk (the old one is gone).
+    pub fn relink_media(&mut self, id: MediaId, new_path: PathBuf) -> Result<(), DocError> {
+        let before = self
+            .project
+            .asset(id)
+            .ok_or(EditError::MediaNotFound(id))?
+            .path
+            .clone();
+        self.run(
+            Command::RelinkMedia {
+                id,
+                before,
+                after: new_path,
+            },
+            None,
+        )
+    }
+
     // ---- editing the main track --------------------------------------------------------------------
 
     fn edit_main(

@@ -4,6 +4,7 @@ mod app;
 mod dev;
 mod editor;
 mod home;
+mod preview;
 mod settings;
 mod theme;
 

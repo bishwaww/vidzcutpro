@@ -50,6 +50,9 @@ pub struct UiSettings {
     pub layout: LayoutPreset,
     /// Panel sizes in points, keyed like `default.left`.
     pub sizes: BTreeMap<String, f32>,
+    /// Recently opened or saved project files, newest first.
+    #[serde(default)]
+    pub recent: Vec<PathBuf>,
 }
 
 impl UiSettings {
@@ -102,6 +105,13 @@ impl UiSettings {
         }
         self.sizes.insert(key, value.round());
         true
+    }
+
+    /// Put a project file at the top of the recent list.
+    pub fn remember_recent(&mut self, path: &std::path::Path) {
+        self.recent.retain(|p| p != path);
+        self.recent.insert(0, path.to_path_buf());
+        self.recent.truncate(12);
     }
 
     /// Forget the sizes of one layout ("Reset layout").

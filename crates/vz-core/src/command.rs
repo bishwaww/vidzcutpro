@@ -4,7 +4,7 @@
 //! [`History::execute`].
 
 use crate::edit::EditError;
-use crate::ids::TrackId;
+use crate::ids::{MediaId, TrackId};
 use crate::media::MediaAsset;
 use crate::project::{Canvas, Project};
 use crate::time::FrameRate;
@@ -21,6 +21,12 @@ pub enum Command {
         before: Vec<Clip>,
         after: Vec<Clip>,
         label: &'static str,
+    },
+    /// Point a media file at a new location on disk (after the file was moved).
+    RelinkMedia {
+        id: MediaId,
+        before: std::path::PathBuf,
+        after: std::path::PathBuf,
     },
     Rename {
         before: String,
@@ -42,6 +48,7 @@ impl Command {
         match self {
             Self::AddMedia(_) => "Import media",
             Self::EditTrack { label, .. } => label,
+            Self::RelinkMedia { .. } => "Relink media",
             Self::Rename { .. } => "Rename project",
             Self::SetCanvas { .. } => "Change canvas",
             Self::SetFrameRate { .. } => "Change frame rate",
@@ -61,6 +68,14 @@ impl Command {
                 }
                 t.clips = after.clone();
             }
+            Self::RelinkMedia { id, after, .. } => {
+                let asset = project
+                    .media
+                    .iter_mut()
+                    .find(|m| m.id == *id)
+                    .ok_or(EditError::MediaNotFound(*id))?;
+                asset.path = after.clone();
+            }
             Self::Rename { after, .. } => project.name = after.clone(),
             Self::SetCanvas { after, .. } => project.canvas = *after,
             Self::SetFrameRate { after, .. } => project.frame_rate = *after,
@@ -75,6 +90,11 @@ impl Command {
             Self::EditTrack { track, before, .. } => {
                 if let Some(t) = project.timeline_mut().track_mut(*track) {
                     t.clips = before.clone();
+                }
+            }
+            Self::RelinkMedia { id, before, .. } => {
+                if let Some(asset) = project.media.iter_mut().find(|m| m.id == *id) {
+                    asset.path = before.clone();
                 }
             }
             Self::Rename { before, .. } => project.name = before.clone(),

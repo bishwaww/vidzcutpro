@@ -6,6 +6,9 @@
 //! `VIDZCUT_LAYOUT=key`      `default`, `player_right` or `big_timeline`
 //! `VIDZCUT_CATEGORY=n`      open asset tab number n (0 = Media)
 //! `VIDZCUT_CONFIG_DIR=dir`  keep settings somewhere else
+//! `VIDZCUT_IMPORT=a.mp4;b.mp4`  import these files at start and put them on the timeline
+//! `VIDZCUT_SHOT_FRAME=n`    take the screenshot at frame n (default 10)
+//! `VIDZCUT_PLAYHEAD=secs`   start with the playhead here
 
 use crate::settings::LayoutPreset;
 use eframe::egui;
@@ -17,6 +20,9 @@ pub struct DevHooks {
     pub start_editor: bool,
     pub layout: Option<LayoutPreset>,
     pub category: Option<usize>,
+    pub import: Vec<PathBuf>,
+    pub playhead_secs: Option<f64>,
+    shot_frame: u32,
     frames: u32,
 }
 
@@ -31,6 +37,21 @@ impl DevHooks {
             category: std::env::var("VIDZCUT_CATEGORY")
                 .ok()
                 .and_then(|v| v.parse().ok()),
+            import: std::env::var("VIDZCUT_IMPORT")
+                .map(|v| {
+                    v.split(';')
+                        .filter(|p| !p.is_empty())
+                        .map(PathBuf::from)
+                        .collect()
+                })
+                .unwrap_or_default(),
+            playhead_secs: std::env::var("VIDZCUT_PLAYHEAD")
+                .ok()
+                .and_then(|v| v.parse().ok()),
+            shot_frame: std::env::var("VIDZCUT_SHOT_FRAME")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(10),
             frames: 0,
         }
     }
@@ -41,7 +62,7 @@ impl DevHooks {
             return;
         };
         self.frames += 1;
-        if self.frames == 10 {
+        if self.frames == self.shot_frame {
             ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::default()));
         }
         let image = ctx.input(|i| {

@@ -21,3 +21,4 @@ directories.workspace = true
 tracing.workspace = true
 rfd = "0.17.2"
 crossbeam-channel = "0.5.17"
+chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
