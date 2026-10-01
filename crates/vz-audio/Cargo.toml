@@ -7,3 +7,9 @@ publish = false
 
 [dependencies]
 vz-core = { path = "../vz-core" }
+vz-media = { path = "../vz-media" }
+ffmpeg-next = { version = "9", default-features = false, features = ["codec", "format", "software-resampling", "software-scaling"] }
+cpal = "0.18.2"
+crossbeam-channel = "0.5.17"
+thiserror.workspace = true
+tracing.workspace = true

@@ -13,6 +13,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use vz_audio::AudioEngine;
 use vz_core::{Document, EXTENSION, MediaId, Micros, Project, RecoveryItem};
 use vz_media::{Event, MaxSize, MediaWorker, VideoFrame};
 
@@ -64,6 +65,10 @@ pub struct VidzApp {
     last_request: Option<(u64, u64, Micros, (u32, u32))>,
     last_sent_project: Option<(u64, u64)>,
 
+    /// The sound device, if one could be opened. Without it, playback uses the computer's clock.
+    audio: Option<AudioEngine>,
+    /// Which project state the sound engine has been told about: (document, revision).
+    audio_project: Option<(u64, u64)>,
     play_origin: Option<(Instant, Micros)>,
     last_clock_playhead: Micros,
 
@@ -127,6 +132,10 @@ impl VidzApp {
             player_texture: None,
             last_request: None,
             last_sent_project: None,
+            audio: AudioEngine::start()
+                .inspect_err(|e| tracing::warn!("playing without sound: {e}"))
+                .ok(),
+            audio_project: None,
             play_origin: None,
             last_clock_playhead: 0,
             last_autosave: Instant::now(),
@@ -280,6 +289,10 @@ impl VidzApp {
                                 if let Some(secs) = self.dev.playhead_secs {
                                     self.editor.playhead = (secs * 1_000_000.0) as Micros;
                                 }
+                                self.dev.imported += 1;
+                                if self.dev.play && self.dev.imported == self.dev.import.len() {
+                                    self.toggle_play();
+                                }
                             }
                             if let Some(poster) = poster {
                                 self.thumbs.insert(
@@ -335,10 +348,31 @@ impl VidzApp {
 
     // ---- playback ---------------------------------------------------------------------------------------------------
 
+    /// Tell the sound engine about the current project if it changed.
+    fn sync_audio_project(&mut self) -> bool {
+        let key = (self.doc_serial, self.doc.revision());
+        let Some(audio) = &self.audio else {
+            return false;
+        };
+        if self.audio_project != Some(key) {
+            audio.set_project(Arc::new(self.doc.project.clone()));
+            self.audio_project = Some(key);
+            return true;
+        }
+        false
+    }
+
+    fn pause(&mut self) {
+        self.editor.playing = false;
+        self.play_origin = None;
+        if let Some(audio) = &self.audio {
+            audio.pause();
+        }
+    }
+
     fn toggle_play(&mut self) {
         if self.editor.playing {
-            self.editor.playing = false;
-            self.play_origin = None;
+            self.pause();
             return;
         }
         let end = self.doc.project.duration();
@@ -351,6 +385,10 @@ impl VidzApp {
         self.editor.playing = true;
         self.play_origin = Some((Instant::now(), self.editor.playhead));
         self.last_clock_playhead = self.editor.playhead;
+        self.sync_audio_project();
+        if let Some(audio) = &self.audio {
+            audio.play(self.editor.playhead);
+        }
     }
 
     fn advance_playback(&mut self, ctx: &egui::Context) {
@@ -359,19 +397,31 @@ impl VidzApp {
         }
         let end = self.doc.project.duration();
         let now = Instant::now();
-        // the user moved the playhead while playing: carry on from there
-        if self.editor.playhead != self.last_clock_playhead || self.play_origin.is_none() {
+        // an edit while playing, or the user moved the playhead: restart the sound from the playhead
+        let edited = self.sync_audio_project();
+        let moved = self.editor.playhead != self.last_clock_playhead || self.play_origin.is_none();
+        if let Some(audio) = &self.audio
+            && (edited || moved)
+        {
+            audio.play(self.editor.playhead);
+        }
+        if moved || edited {
             self.play_origin = Some((now, self.editor.playhead));
         }
-        let (start_time, start_t) = self.play_origin.expect("set just above");
-        let t = start_t + now.duration_since(start_time).as_micros() as Micros;
+        // the sound card's clock is the master; without a sound device the computer's clock is used
+        let t = match &self.audio {
+            Some(audio) => audio.position(),
+            None => {
+                let (start_time, start_t) = self.play_origin.expect("set just above");
+                start_t + now.duration_since(start_time).as_micros() as Micros
+            }
+        };
         let rate = self.doc.project.frame_rate;
         if t >= end {
             self.editor.playhead = end;
-            self.editor.playing = false;
-            self.play_origin = None;
+            self.pause();
         } else {
-            self.editor.playhead = rate.frame_start(rate.frame_at(t));
+            self.editor.playhead = rate.frame_start(rate.frame_at(t.max(0)));
         }
         self.last_clock_playhead = self.editor.playhead;
         ctx.request_repaint();
@@ -399,7 +449,7 @@ impl VidzApp {
     fn run_action(&mut self, action: Action) {
         match action {
             Action::GoHome => {
-                self.editor.playing = false;
+                self.pause();
                 self.screen = Screen::Home;
             }
             Action::SetLayout(preset) => {
