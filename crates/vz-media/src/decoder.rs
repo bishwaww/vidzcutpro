@@ -23,7 +23,10 @@ pub struct VideoFrame {
 impl VideoFrame {
     pub fn black(width: u32, height: u32) -> Self {
         let mut rgba = vec![0u8; (width * height * 4) as usize];
-        rgba.chunks_exact_mut(4).for_each(|p| p[3] = 255);
+        rgba.as_chunks_mut::<4>()
+            .0
+            .iter_mut()
+            .for_each(|p| p[3] = 255);
         Self {
             width,
             height,
@@ -82,6 +85,13 @@ impl MaxSize {
 /// How far ahead of the current frame we keep reading instead of seeking.
 const SEEK_THRESHOLD: Micros = 2_000_000;
 
+/// A colour converter and what it was built for, so it is rebuilt only when the picture format or size changes.
+struct CachedScaler {
+    scaler: Scaler,
+    input: (Pixel, u32, u32),
+    output: (u32, u32),
+}
+
 struct Held {
     pts: Micros,
     frame: ff::frame::Video,
@@ -97,7 +107,7 @@ pub struct VideoDecoder {
     rotation: u32,
     sar: (u32, u32),
     max: MaxSize,
-    scaler: Option<(Scaler, (Pixel, u32, u32), (u32, u32))>,
+    scaler: Option<CachedScaler>,
     current: Option<Held>,
     lookahead: Option<Held>,
     reached_end: bool,
@@ -273,12 +283,16 @@ impl VideoDecoder {
             (out_w, out_h)
         };
         let key = (src.format(), src.width(), src.height());
-        let rebuild = !matches!(&self.scaler, Some((_, k, size)) if *k == key && *size == (sw, sh));
+        let rebuild = !matches!(&self.scaler, Some(c) if c.input == key && c.output == (sw, sh));
         if rebuild {
             let scaler = Scaler::get(key.0, key.1, key.2, Pixel::RGBA, sw, sh, Flags::BILINEAR)?;
-            self.scaler = Some((scaler, key, (sw, sh)));
+            self.scaler = Some(CachedScaler {
+                scaler,
+                input: key,
+                output: (sw, sh),
+            });
         }
-        let (scaler, _, _) = self.scaler.as_mut().expect("scaler was just built");
+        let scaler = &mut self.scaler.as_mut().expect("scaler was just built").scaler;
         let mut rgba = ff::frame::Video::empty();
         scaler.run(src, &mut rgba)?;
         let packed = pack_rows(&rgba, sw, sh);
@@ -322,7 +336,7 @@ pub(crate) fn rotate_rgba(src: Vec<u8>, w: u32, h: u32, degrees: u32) -> (u32, u
         }
         180 => {
             let mut out = Vec::with_capacity(src.len());
-            for p in src.chunks_exact(4).rev() {
+            for p in src.as_chunks::<4>().0.iter().rev() {
                 out.extend_from_slice(p);
             }
             (w as u32, h as u32, out)
@@ -413,6 +427,12 @@ mod tests {
     fn black_frame_is_opaque() {
         let f = VideoFrame::black(4, 2);
         assert_eq!(f.rgba.len(), 32);
-        assert!(f.rgba.chunks_exact(4).all(|p| p == [0, 0, 0, 255]));
+        assert!(
+            f.rgba
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .all(|p| *p == [0, 0, 0, 255])
+        );
     }
 }
