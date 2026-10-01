@@ -88,7 +88,7 @@ const SEEK_THRESHOLD: Micros = 2_000_000;
 /// A colour converter and what it was built for, so it is rebuilt only when the picture format or size changes.
 struct CachedScaler {
     scaler: Scaler,
-    input: (Pixel, u32, u32),
+    input: (Pixel, u32, u32, ff::color::Space, ff::color::Range),
     output: (u32, u32),
 }
 
@@ -282,10 +282,18 @@ impl VideoDecoder {
         } else {
             (out_w, out_h)
         };
-        let key = (src.format(), src.width(), src.height());
+        let key = (
+            src.format(),
+            src.width(),
+            src.height(),
+            src.color_space(),
+            src.color_range(),
+        );
         let rebuild = !matches!(&self.scaler, Some(c) if c.input == key && c.output == (sw, sh));
         if rebuild {
-            let scaler = Scaler::get(key.0, key.1, key.2, Pixel::RGBA, sw, sh, Flags::BILINEAR)?;
+            let mut scaler =
+                Scaler::get(key.0, key.1, key.2, Pixel::RGBA, sw, sh, Flags::BILINEAR)?;
+            set_yuv_matrix(&mut scaler, key.3, key.4, key.2);
             self.scaler = Some(CachedScaler {
                 scaler,
                 input: key,
@@ -303,6 +311,42 @@ impl VideoDecoder {
             rgba: data,
             pts,
         })
+    }
+}
+
+/// Tell the colour converter which YUV→RGB matrix the footage uses. FFmpeg's default is the old
+/// standard-definition one (BT.601), which would shift the colours of HD and phone video (BT.709).
+/// When the file does not say, HD-sized pictures are assumed to be BT.709.
+fn set_yuv_matrix(
+    scaler: &mut Scaler,
+    space: ff::color::Space,
+    range: ff::color::Range,
+    height: u32,
+) {
+    use ff::color::Space;
+    let table = match space {
+        Space::BT709 => ff::ffi::SWS_CS_ITU709,
+        Space::BT470BG | Space::SMPTE170M => ff::ffi::SWS_CS_ITU601,
+        Space::SMPTE240M => ff::ffi::SWS_CS_SMPTE240M,
+        Space::BT2020NCL | Space::BT2020CL => ff::ffi::SWS_CS_BT2020,
+        _ if height >= 720 => ff::ffi::SWS_CS_ITU709,
+        _ => ff::ffi::SWS_CS_ITU601,
+    };
+    let source_is_full_range = i32::from(range == ff::color::Range::JPEG);
+    // SAFETY: the pointer is the scaler's own live SwsContext; the tables come from FFmpeg itself.
+    // (Picture formats that are already RGB make this call return an error, which is fine to ignore.)
+    unsafe {
+        let coefficients = ff::ffi::sws_getCoefficients(table);
+        ff::ffi::sws_setColorspaceDetails(
+            scaler.as_mut_ptr(),
+            coefficients,
+            source_is_full_range,
+            coefficients,
+            1,
+            0,
+            1 << 16,
+            1 << 16,
+        );
     }
 }
 

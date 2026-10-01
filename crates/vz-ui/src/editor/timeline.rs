@@ -839,35 +839,4 @@ fn handle_media_drop(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn zoom_range_is_sensible() {
-        assert!((pixels_per_second(0.0) - 20.0).abs() < 0.01);
-        assert!((pixels_per_second(1.0) - 400.0).abs() < 0.01);
-        assert!(pixels_per_second(0.5) > pixels_per_second(0.2));
-        // out-of-range values are clamped
-        assert_eq!(pixels_per_second(-3.0), pixels_per_second(0.0));
-        assert_eq!(pixels_per_second(9.0), pixels_per_second(1.0));
-    }
-
-    #[test]
-    fn zoom_for_is_the_inverse() {
-        for z in [0.0, 0.25, 0.5, 0.9] {
-            assert!((zoom_for(pixels_per_second(z)) - z).abs() < 0.001);
-        }
-    }
-
-    #[test]
-    fn geometry_converts_both_ways() {
-        let geo = Geo {
-            lane_x0: 100.0,
-            pps: 50.0,
-            scroll_x: 25.0,
-        };
-        assert_eq!(geo.x(0), 75.0);
-        assert_eq!(geo.time(geo.x(3 * US_PER_SEC)), 3 * US_PER_SEC);
-        assert_eq!(geo.span(50.0), US_PER_SEC);
-    }
-}
+mod tests;

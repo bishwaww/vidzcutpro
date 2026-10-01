@@ -3,6 +3,7 @@
 mod app;
 mod dev;
 mod editor;
+mod export_dialog;
 mod home;
 mod preview;
 mod settings;

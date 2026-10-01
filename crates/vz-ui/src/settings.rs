@@ -53,6 +53,9 @@ pub struct UiSettings {
     /// Recently opened or saved project files, newest first.
     #[serde(default)]
     pub recent: Vec<PathBuf>,
+    /// The folder the last export went to.
+    #[serde(default)]
+    pub export_dir: Option<PathBuf>,
 }
 
 impl UiSettings {

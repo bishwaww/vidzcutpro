@@ -9,6 +9,7 @@
 //! `VIDZCUT_IMPORT=a.mp4;b.mp4`  import these files at start and put them on the timeline
 //! `VIDZCUT_SHOT_FRAME=n`    take the screenshot at frame n (default 10)
 //! `VIDZCUT_PLAYHEAD=secs`   start with the playhead here
+//! `VIDZCUT_AUTOEXPORT=dir`   export the imported files into this folder as soon as they are on the timeline
 //! `VIDZCUT_PLAY=1`          start playing once the imported files are on the timeline
 
 use crate::settings::LayoutPreset;
@@ -24,6 +25,7 @@ pub struct DevHooks {
     pub import: Vec<PathBuf>,
     pub playhead_secs: Option<f64>,
     pub play: bool,
+    pub auto_export: Option<PathBuf>,
     pub imported: usize,
     shot_frame: u32,
     frames: u32,
@@ -48,6 +50,7 @@ impl DevHooks {
                         .collect()
                 })
                 .unwrap_or_default(),
+            auto_export: std::env::var_os("VIDZCUT_AUTOEXPORT").map(PathBuf::from),
             play: std::env::var("VIDZCUT_PLAY").is_ok_and(|v| v == "1"),
             imported: 0,
             playhead_secs: std::env::var("VIDZCUT_PLAYHEAD")

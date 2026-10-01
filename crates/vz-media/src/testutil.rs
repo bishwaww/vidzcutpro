@@ -26,6 +26,8 @@ pub struct Spec {
     pub pattern: Pattern,
     /// Write a "rotate by this many degrees" note, like phones do.
     pub rotate: u32,
+    /// Encode with the HD colour matrix (BT.709) and tag it, like most HD and phone footage.
+    pub bt709: bool,
 }
 
 impl Default for Spec {
@@ -38,6 +40,7 @@ impl Default for Spec {
             audio_hz: Some(440),
             pattern: Pattern::Chart,
             rotate: 0,
+            bt709: false,
         }
     }
 }
@@ -106,6 +109,20 @@ pub fn video(name: &str, spec: Spec) -> PathBuf {
         ]);
         if spec.audio_hz.is_some() {
             cmd.args(["-c:a", "aac", "-b:a", "128k", "-shortest"]);
+        }
+        if spec.bt709 {
+            cmd.args([
+                "-vf",
+                "scale=out_color_matrix=bt709:out_range=tv,format=yuv420p",
+                "-colorspace",
+                "bt709",
+                "-color_primaries",
+                "bt709",
+                "-color_trc",
+                "bt709",
+                "-color_range",
+                "tv",
+            ]);
         }
         cmd.args(["-f", "mp4"]).arg(&tmp);
         let status = cmd

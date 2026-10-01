@@ -3963,6 +3963,10 @@ dependencies = [
 name = "vz-export"
 version = "0.0.1"
 dependencies = [
+ "ffmpeg-next",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tracing",
  "vz-audio",
  "vz-core",
  "vz-media",
@@ -4021,6 +4025,7 @@ dependencies = [
  "tracing",
  "vz-audio",
  "vz-core",
+ "vz-export",
  "vz-media",
  "vz-presets",
  "vz-render",

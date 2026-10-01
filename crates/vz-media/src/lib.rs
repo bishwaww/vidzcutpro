@@ -262,4 +262,33 @@ mod tests {
         }
         assert_eq!((imported, failed), (1, 1));
     }
+
+    #[test]
+    fn hd_footage_keeps_its_colours() {
+        // an orange picture encoded with the HD (BT.709) matrix must come back orange, not shifted
+        let p = testutil::video(
+            "hd_bt709_orange.mp4",
+            Spec {
+                pattern: Pattern::Solid(0xE08030),
+                width: 1280,
+                height: 720,
+                audio_hz: None,
+                seconds: 1,
+                bt709: true,
+                ..Spec::default()
+            },
+        );
+        let mut d = VideoDecoder::open(&p, MaxSize::FULL).unwrap();
+        let f = d.frame_at(200_000).unwrap().unwrap();
+        let mid = ((360 * 1280 + 640) * 4) as usize;
+        let (r, g, b) = (
+            i32::from(f.rgba[mid]),
+            i32::from(f.rgba[mid + 1]),
+            i32::from(f.rgba[mid + 2]),
+        );
+        assert!(
+            (r - 0xE0).abs() <= 6 && (g - 0x80).abs() <= 6 && (b - 0x30).abs() <= 6,
+            "expected about (224, 128, 48), got ({r}, {g}, {b})"
+        );
+    }
 }

@@ -7,6 +7,12 @@ publish = false
 
 [dependencies]
 vz-core = { path = "../vz-core" }
-vz-render = { path = "../vz-render" }
 vz-media = { path = "../vz-media" }
+vz-render = { path = "../vz-render" }
 vz-audio = { path = "../vz-audio" }
+ffmpeg-next = { version = "9", default-features = false, features = ["codec", "format", "software-resampling", "software-scaling"] }
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

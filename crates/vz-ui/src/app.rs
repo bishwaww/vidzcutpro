@@ -3,6 +3,7 @@
 
 use crate::dev::DevHooks;
 use crate::editor::{self, Action, EditorState};
+use crate::export_dialog::ExportDialog;
 use crate::home::{self, RecentItem};
 use crate::preview::Preview;
 use crate::settings::UiSettings;
@@ -76,6 +77,7 @@ pub struct VidzApp {
     last_autosave_revision: u64,
     saved_at: Option<String>,
     dialog: Option<Dialog>,
+    export: Option<ExportDialog>,
     allow_close: bool,
 }
 
@@ -142,6 +144,7 @@ impl VidzApp {
             last_autosave_revision: 0,
             saved_at: None,
             dialog: (!recovered.is_empty()).then_some(Dialog::Recover(recovered)),
+            export: None,
             allow_close: false,
         };
         // developer switch: import files at start-up
@@ -292,6 +295,18 @@ impl VidzApp {
                                 self.dev.imported += 1;
                                 if self.dev.play && self.dev.imported == self.dev.import.len() {
                                     self.toggle_play();
+                                }
+                                if let Some(dir) = self.dev.auto_export.clone()
+                                    && self.dev.imported == self.dev.import.len()
+                                {
+                                    let mut dialog =
+                                        ExportDialog::new(&self.doc.project.name, &self.settings);
+                                    dialog.start_now_into(
+                                        dir,
+                                        &self.doc.project,
+                                        &mut self.settings,
+                                    );
+                                    self.export = Some(dialog);
                                 }
                             }
                             if let Some(poster) = poster {
@@ -466,9 +481,14 @@ impl VidzApp {
             Action::SaveAs => self.save(true),
             Action::OpenDialog => self.open_dialog(),
             Action::TogglePlay => self.toggle_play(),
-            Action::Export => self
-                .editor
-                .say("Export arrives in the next step of Phase 1."),
+            Action::Export => {
+                if self.doc.project.duration() == 0 {
+                    self.editor.say("Add something to the timeline first.");
+                } else {
+                    self.pause();
+                    self.export = Some(ExportDialog::new(&self.doc.project.name, &self.settings));
+                }
+            }
             Action::Relink(id) => self.relink(id),
         }
     }
@@ -746,6 +766,11 @@ impl eframe::App for VidzApp {
         }
 
         self.show_dialog(&ctx);
+        if let Some(dialog) = &mut self.export
+            && dialog.show(&ctx, &self.doc.project, &mut self.settings)
+        {
+            self.export = None;
+        }
 
         // Save the remembered layout once the user lets go of the mouse (not on every pixel of a drag).
         if self.settings_dirty && !ctx.input(|i| i.pointer.any_down()) {
