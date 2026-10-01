@@ -372,3 +372,112 @@ fn random_editing_can_always_be_fully_undone() {
     assert_eq!(doc.project.timeline(), end.timeline());
     let _ = start;
 }
+
+fn portrait_24fps(path: &Path) -> MediaAsset {
+    MediaAsset {
+        width: 1080,
+        height: 1920,
+        frame_rate: Some(FrameRate::FPS_24),
+        ..video("phone", 10, path)
+    }
+}
+
+#[test]
+fn the_first_clip_sets_the_shape_and_frame_rate_in_one_undo_step() {
+    let mut doc = Document::new(Project::new("t"));
+    let id = doc
+        .import_media(portrait_24fps(Path::new("/m/p.mp4")))
+        .unwrap();
+    doc.add_clip(id, 0).unwrap();
+    assert_eq!(
+        (doc.project.canvas.width, doc.project.canvas.height),
+        (1080, 1920)
+    );
+    assert_eq!(doc.project.frame_rate, FrameRate::FPS_24);
+    assert!(!doc.project.auto_settings);
+    assert_eq!(doc.project.duration(), 10 * US_PER_SEC);
+
+    // a second clip leaves the settings alone
+    let other = doc
+        .import_media(video("wide", 5, Path::new("/m/w.mp4")))
+        .unwrap();
+    doc.add_clip(other, usize::MAX).unwrap();
+    assert_eq!(
+        (doc.project.canvas.width, doc.project.canvas.height),
+        (1080, 1920)
+    );
+
+    // undo: second clip, its import, then the first clip (which also gives the settings back)
+    assert!(doc.undo());
+    assert!(doc.undo());
+    assert_eq!(
+        doc.project.frame_rate,
+        FrameRate::FPS_24,
+        "the first clip is still there"
+    );
+    assert!(doc.undo());
+    assert!(doc.project.auto_settings);
+    assert_eq!(
+        (doc.project.canvas.width, doc.project.canvas.height),
+        (1920, 1080)
+    );
+    assert_eq!(doc.project.frame_rate, FrameRate::FPS_30);
+    assert!(clips(&doc).is_empty());
+    assert!(doc.redo());
+    assert_eq!(doc.project.frame_rate, FrameRate::FPS_24);
+}
+
+#[test]
+fn choosing_a_shape_by_hand_turns_off_the_automatic_settings() {
+    let mut doc = Document::new(Project::new("t"));
+    doc.set_aspect(AspectPreset::Square1x1).unwrap();
+    assert!(!doc.project.auto_settings);
+    let id = doc
+        .import_media(portrait_24fps(Path::new("/m/p.mp4")))
+        .unwrap();
+    doc.add_clip(id, 0).unwrap();
+    assert_eq!(
+        (doc.project.canvas.width, doc.project.canvas.height),
+        (1080, 1080),
+        "the user's choice stays"
+    );
+    assert_eq!(doc.project.frame_rate, FrameRate::FPS_30);
+    // take back the clip, the import and then the shape choice itself
+    doc.undo();
+    doc.undo();
+    doc.undo();
+    assert!(doc.project.auto_settings);
+    assert_eq!(
+        (doc.project.canvas.width, doc.project.canvas.height),
+        (1920, 1080)
+    );
+}
+
+#[test]
+fn a_picture_sets_the_shape_but_not_the_frame_rate() {
+    let mut doc = Document::new(Project::new("t"));
+    let pic = MediaAsset {
+        width: 1000,
+        height: 1000,
+        ..image(Path::new("/m/a.png"))
+    };
+    let id = doc.import_media(pic).unwrap();
+    doc.add_clip(id, 0).unwrap();
+    assert_eq!(
+        (doc.project.canvas.width, doc.project.canvas.height),
+        (1080, 1080)
+    );
+    assert_eq!(doc.project.frame_rate, FrameRate::FPS_30);
+}
+
+#[test]
+fn odd_frame_rates_pick_the_nearest_standard_one() {
+    let mut doc = Document::new(Project::new("t"));
+    let a = MediaAsset {
+        frame_rate: FrameRate::new(2997, 100),
+        ..video("a", 4, Path::new("/m/a.mp4"))
+    };
+    let id = doc.import_media(a).unwrap();
+    doc.add_clip(id, 0).unwrap();
+    assert_eq!(doc.project.frame_rate, FrameRate::FPS_29_97);
+}

@@ -72,6 +72,9 @@ pub struct VidzApp {
     audio_project: Option<(u64, u64)>,
     play_origin: Option<(Instant, Micros)>,
     last_clock_playhead: Micros,
+    /// Preview pictures shown since the last log line, for measuring playback smoothness.
+    shown_pictures: u32,
+    fps_logged_at: Instant,
 
     last_autosave: Instant,
     last_autosave_revision: u64,
@@ -134,12 +137,19 @@ impl VidzApp {
             player_texture: None,
             last_request: None,
             last_sent_project: None,
-            audio: AudioEngine::start()
-                .inspect_err(|e| tracing::warn!("playing without sound: {e}"))
-                .ok(),
+            // VIDZCUT_NO_AUDIO=1 (developer switch) keeps automatic checks quiet
+            audio: if std::env::var_os("VIDZCUT_NO_AUDIO").is_some() {
+                None
+            } else {
+                AudioEngine::start()
+                    .inspect_err(|e| tracing::warn!("playing without sound: {e}"))
+                    .ok()
+            },
             audio_project: None,
             play_origin: None,
             last_clock_playhead: 0,
+            shown_pictures: 0,
+            fps_logged_at: Instant::now(),
             last_autosave: Instant::now(),
             last_autosave_revision: 0,
             saved_at: None,
@@ -334,6 +344,7 @@ impl VidzApp {
             }
         }
         if let Some(frame) = self.preview.take_new_frame() {
+            self.shown_pictures += 1;
             match &mut self.player_texture {
                 Some(tex) => tex.set(color_image(&frame), egui::TextureOptions::LINEAR),
                 None => self.player_texture = Some(frame_texture(ctx, "player", &frame)),
@@ -439,6 +450,16 @@ impl VidzApp {
             self.editor.playhead = rate.frame_start(rate.frame_at(t.max(0)));
         }
         self.last_clock_playhead = self.editor.playhead;
+        if self.fps_logged_at.elapsed() >= Duration::from_secs(2) {
+            let secs = self.fps_logged_at.elapsed().as_secs_f64();
+            tracing::info!(
+                "playback: {:.1} pictures per second shown (project is {} fps)",
+                f64::from(self.shown_pictures) / secs,
+                rate.label()
+            );
+            self.shown_pictures = 0;
+            self.fps_logged_at = Instant::now();
+        }
         ctx.request_repaint();
     }
 
@@ -610,7 +631,7 @@ impl VidzApp {
         if !ctx.input(|i| i.viewport().close_requested()) || self.allow_close {
             return;
         }
-        if matches!(self.screen, Screen::Editor) && self.doc.is_dirty() && self.dev.shot.is_none() {
+        if matches!(self.screen, Screen::Editor) && self.doc.is_dirty() && !self.dev.scripted() {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             self.dialog = Some(Dialog::Quit);
         } else if let Some(dir) = recovery_dir() {
@@ -705,6 +726,10 @@ pub fn window_icon() -> egui::IconData {
 }
 
 impl eframe::App for VidzApp {
+    fn raw_input_hook(&mut self, _ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+        self.dev.inject(raw_input);
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         if self.textures.is_none() {

@@ -95,6 +95,10 @@ pub struct Project {
     pub name: String,
     pub canvas: Canvas,
     pub frame_rate: FrameRate,
+    /// While true, the first clip put on an empty timeline sets the canvas shape and frame rate
+    /// (like "Original" in other editors). Any manual change to either turns it off.
+    #[serde(default)]
+    pub auto_settings: bool,
     #[serde(default)]
     pub media: Vec<MediaAsset>,
     pub timelines: Vec<Timeline>,
@@ -110,6 +114,7 @@ impl Project {
             name: name.into(),
             canvas: Canvas { width, height },
             frame_rate: FrameRate::FPS_30,
+            auto_settings: true,
             media: Vec::new(),
             timelines: vec![Timeline::new("Timeline 01")],
         }
@@ -140,6 +145,45 @@ impl Project {
             .filter(|m| !m.path.exists())
             .map(|m| m.id)
             .collect()
+    }
+
+    /// The canvas that fits a picture of `width` x `height`: a standard shape when it is close to one,
+    /// otherwise the exact shape with a short side of 1080.
+    pub fn canvas_for_picture(width: u32, height: u32) -> Canvas {
+        if width == 0 || height == 0 {
+            let (w, h) = AspectPreset::Wide16x9.size();
+            return Canvas {
+                width: w,
+                height: h,
+            };
+        }
+        let aspect = f64::from(width) / f64::from(height);
+        let near = AspectPreset::ALL.into_iter().min_by(|a, b| {
+            let da = (f64::from(a.size().0) / f64::from(a.size().1) / aspect - 1.0).abs();
+            let db = (f64::from(b.size().0) / f64::from(b.size().1) / aspect - 1.0).abs();
+            da.total_cmp(&db)
+        });
+        if let Some(p) = near
+            .filter(|p| (f64::from(p.size().0) / f64::from(p.size().1) / aspect - 1.0).abs() < 0.04)
+        {
+            let (w, h) = p.size();
+            return Canvas {
+                width: w,
+                height: h,
+            };
+        }
+        let even = |v: f64| ((v.round() as u32).max(2) + 1) & !1;
+        if width >= height {
+            Canvas {
+                width: even(1080.0 * aspect),
+                height: 1080,
+            }
+        } else {
+            Canvas {
+                width: 1080,
+                height: even(1080.0 / aspect),
+            }
+        }
     }
 
     pub fn set_aspect(&mut self, preset: AspectPreset) {
@@ -194,6 +238,23 @@ mod tests {
         assert_eq!(p.duration(), 0);
         assert_eq!(p.aspect_preset(), Some(AspectPreset::Wide16x9));
         assert_eq!(p.timeline().main_track().clips.len(), 0);
+        assert!(p.auto_settings);
+    }
+
+    #[test]
+    fn the_canvas_follows_the_shape_of_a_picture() {
+        let c = |w, h| {
+            let c = Project::canvas_for_picture(w, h);
+            (c.width, c.height)
+        };
+        assert_eq!(c(1920, 1080), (1920, 1080));
+        assert_eq!(c(3840, 2160), (1920, 1080));
+        assert_eq!(c(1080, 1920), (1080, 1920));
+        assert_eq!(c(1000, 1000), (1080, 1080));
+        assert_eq!(c(1440, 1080), (1440, 1080));
+        // an unusual shape keeps its exact shape with a 1080 short side
+        assert_eq!(c(2000, 1000), (2160, 1080));
+        assert_eq!(c(0, 0), (1920, 1080));
     }
 
     #[test]

@@ -40,6 +40,16 @@ pub enum Command {
         before: FrameRate,
         after: FrameRate,
     },
+    /// Whether the project still follows the first clip's size and frame rate.
+    SetAutoSettings {
+        before: bool,
+        after: bool,
+    },
+    /// Several commands that undo and redo as one step.
+    Batch {
+        label: &'static str,
+        commands: Vec<Command>,
+    },
 }
 
 impl Command {
@@ -52,6 +62,8 @@ impl Command {
             Self::Rename { .. } => "Rename project",
             Self::SetCanvas { .. } => "Change canvas",
             Self::SetFrameRate { .. } => "Change frame rate",
+            Self::SetAutoSettings { .. } => "Change project settings",
+            Self::Batch { label, .. } => label,
         }
     }
 
@@ -79,6 +91,18 @@ impl Command {
             Self::Rename { after, .. } => project.name = after.clone(),
             Self::SetCanvas { after, .. } => project.canvas = *after,
             Self::SetFrameRate { after, .. } => project.frame_rate = *after,
+            Self::SetAutoSettings { after, .. } => project.auto_settings = *after,
+            Self::Batch { commands, .. } => {
+                for (i, c) in commands.iter().enumerate() {
+                    if let Err(e) = c.apply(project) {
+                        // undo what was already done, so a failed batch changes nothing
+                        for done in commands[..i].iter().rev() {
+                            done.revert(project);
+                        }
+                        return Err(e);
+                    }
+                }
+            }
         }
         Ok(())
     }
@@ -100,6 +124,12 @@ impl Command {
             Self::Rename { before, .. } => project.name = before.clone(),
             Self::SetCanvas { before, .. } => project.canvas = *before,
             Self::SetFrameRate { before, .. } => project.frame_rate = *before,
+            Self::SetAutoSettings { before, .. } => project.auto_settings = *before,
+            Self::Batch { commands, .. } => {
+                for c in commands.iter().rev() {
+                    c.revert(project);
+                }
+            }
         }
     }
 

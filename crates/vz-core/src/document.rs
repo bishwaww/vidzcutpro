@@ -169,26 +169,40 @@ impl Document {
         if after == self.project.canvas {
             return Ok(());
         }
-        self.run(
-            Command::SetCanvas {
-                before: self.project.canvas,
-                after,
-            },
-            None,
-        )
+        let change = Command::SetCanvas {
+            before: self.project.canvas,
+            after,
+        };
+        self.run(self.manual_setting(change, "Change canvas"), None)
+    }
+
+    /// A change the user chose by hand also stops the project from following the first clip.
+    fn manual_setting(&self, change: Command, label: &'static str) -> Command {
+        if self.project.auto_settings {
+            Command::Batch {
+                label,
+                commands: vec![
+                    change,
+                    Command::SetAutoSettings {
+                        before: true,
+                        after: false,
+                    },
+                ],
+            }
+        } else {
+            change
+        }
     }
 
     pub fn set_frame_rate(&mut self, rate: FrameRate) -> Result<(), DocError> {
         if rate == self.project.frame_rate {
             return Ok(());
         }
-        self.run(
-            Command::SetFrameRate {
-                before: self.project.frame_rate,
-                after: rate,
-            },
-            None,
-        )
+        let change = Command::SetFrameRate {
+            before: self.project.frame_rate,
+            after: rate,
+        };
+        self.run(self.manual_setting(change, "Change frame rate"), None)
     }
 
     // ---- media ---------------------------------------------------------------------------------------
@@ -247,21 +261,61 @@ impl Document {
             .project
             .asset(media)
             .ok_or(EditError::MediaNotFound(media))?;
+        // The first clip on an empty timeline sets the shape and frame rate of the project (unless the
+        // user already chose them). All of it is one undo step.
+        let track = self.project.timeline().main_track();
+        let adopt = self.project.auto_settings && track.clips.is_empty() && asset.has_picture();
+        let rate = if adopt {
+            frame_rate_for(asset).unwrap_or(self.project.frame_rate)
+        } else {
+            self.project.frame_rate
+        };
         let clip = Clip {
             id: ClipId::new(),
             media,
             start: 0,
             source_in: 0,
-            duration: self
-                .project
-                .frame_rate
+            duration: rate
                 .snap(asset.default_clip_duration())
-                .max(self.project.frame_rate.frame_start(1)),
+                .max(rate.frame_start(1)),
         };
         let id = clip.id;
-        self.edit_main("Add clip", None, |clips| {
-            Ok(edit::insert(clips, index, clip))
-        })?;
+        let canvas = Project::canvas_for_picture(asset.width, asset.height);
+        let edit = Command::EditTrack {
+            track: track.id,
+            before: track.clips.clone(),
+            after: edit::insert(&track.clips, index, clip),
+            label: "Add clip",
+        };
+        if adopt {
+            let mut commands = Vec::new();
+            if canvas != self.project.canvas {
+                commands.push(Command::SetCanvas {
+                    before: self.project.canvas,
+                    after: canvas,
+                });
+            }
+            if rate != self.project.frame_rate {
+                commands.push(Command::SetFrameRate {
+                    before: self.project.frame_rate,
+                    after: rate,
+                });
+            }
+            commands.push(Command::SetAutoSettings {
+                before: true,
+                after: false,
+            });
+            commands.push(edit);
+            self.run(
+                Command::Batch {
+                    label: "Add clip",
+                    commands,
+                },
+                None,
+            )?;
+        } else {
+            self.run(edit, None)?;
+        }
         Ok(id)
     }
 
@@ -446,3 +500,17 @@ impl Document {
 
 #[cfg(test)]
 mod tests;
+
+/// The project frame rate that suits a video: the standard rate nearest to the file's own.
+/// `None` for pictures and for files that do not say.
+fn frame_rate_for(asset: &MediaAsset) -> Option<FrameRate> {
+    if asset.kind != crate::media::MediaKind::Video {
+        return None;
+    }
+    let wanted = asset.frame_rate?.as_f64();
+    FrameRate::PRESETS.into_iter().min_by(|a, b| {
+        (a.as_f64() - wanted)
+            .abs()
+            .total_cmp(&(b.as_f64() - wanted).abs())
+    })
+}
