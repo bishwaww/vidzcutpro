@@ -13,3 +13,9 @@ vz-audio = { path = "../vz-audio" }
 vz-text = { path = "../vz-text" }
 vz-vector = { path = "../vz-vector" }
 vz-presets = { path = "../vz-presets" }
+eframe.workspace = true
+image.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+directories.workspace = true
+tracing.workspace = true

@@ -1,6 +1,6 @@
 # vidzcut — Architecture (plan, written in Phase 0)
 
-Status: **PLAN — waiting for the owner's OK.** No Rust code exists yet.
+Status (2026-10-02): plan **approved by the owner**; Phase 0 steps 0a–0f are built (see ROADMAP.md). Sections 3–5 describe the target; only `vz-core` (time, project settings), `vz-media` (FFmpeg start-up), `vz-ui` and `vidzcut` contain code so far.
 Follows `docs/SPEC.md` (the master spec). Where I suggest a change, it is in section 6 with a reason.
 
 ## 1. The idea in plain words

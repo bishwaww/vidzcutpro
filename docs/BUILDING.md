@@ -1,39 +1,55 @@
 # Building vidzcut
 
-Status: **draft** — written in Phase 0 before any code exists. It will be tested and finished in step 0f.
+Last tested: 2026-10-02 on Windows 11 (i5-13420H, RTX 4050 + Intel UHD). macOS is **not tested yet** (no Mac available): see the macOS section.
 
-## What this PC has (checked 2026-10-01)
+## Windows — the short way
 
-| Tool | Status |
-|---|---|
-| Git 2.55 | installed |
-| Node, Python 3.12 | installed (not needed for vidzcut itself) |
-| winget (Windows package manager) | installed |
-| **Rust (rustc, cargo)** | **missing** |
-| **Microsoft C++ Build Tools (MSVC)** | **missing** |
-| **LLVM / clang** (needed by FFmpeg bindings) | **missing** |
-| **FFmpeg (LGPL, shared)** | **missing** |
-| GPU | NVIDIA RTX 4050 Laptop + Intel UHD (so NVENC and QuickSync can both be tested) |
-| RAM / disk | 15.6 GB RAM, ~100 GB free on D: |
+1. Open the project folder `D:\Projects\vidzcutpro` in PowerShell.
+2. First time only: `powershell -ExecutionPolicy Bypass -File scripts\setup-windows.ps1`
+   It checks for Rust, Microsoft C++ Build Tools, LLVM and the LGPL FFmpeg, and **asks before each download** (add `-Yes` to say yes to all). It also sets the user variable `LIBCLANG_PATH`.
+3. Every time: double-click **`run-vidzcut.bat`** (or run `powershell -ExecutionPolicy Bypass -File scripts\run.ps1`). The first build takes several minutes, later ones are fast.
 
-## Windows setup (planned, needs owner OK for each download)
+## What gets installed (and why)
 
-1. **Rust** — `winget install Rustlang.Rustup`, then `rustup default stable`. (MIT/Apache, ~500 MB installed.)
-2. **C++ build tools** — `winget install Microsoft.VisualStudio.2022.BuildTools` with the "Desktop development with C++" workload. (Microsoft, free, ~3–6 GB. Needed to link Rust programs on Windows.)
-3. **LLVM** — `winget install LLVM.LLVM` (for `bindgen`, which reads FFmpeg's C headers).
-4. **FFmpeg (LGPL, shared, with headers + import libs)** — a pre-built "lgpl-shared" Windows build, unpacked to `D:\Projects\vidzcutpro\third_party\ffmpeg\`. Environment variables: `FFMPEG_DIR`, `LIBCLANG_PATH`. The DLLs are copied next to `vidzcut.exe`.
-5. `scripts\setup-windows.ps1` will do steps 1–4 and 5's environment variables in one go (asking before each download).
-6. Build + run: `cargo run --release -p vidzcut`.
+| Tool | Why | Installed by |
+|---|---|---|
+| Rust (stable, MSVC) | the programming language | `winget install Rustlang.Rustup` |
+| Microsoft C++ Build Tools | Rust needs Microsoft's linker on Windows | `winget install Microsoft.VisualStudio.2022.BuildTools` (C++ workload) |
+| LLVM | lets the FFmpeg bindings read FFmpeg's header files | `winget install LLVM.LLVM` |
+| FFmpeg n9.0, LGPL, shared | decoding / encoding. Unpacked to `third_party\ffmpeg` (git-ignored) | downloaded by the setup script from github.com/BtbN/FFmpeg-Builds |
 
-## macOS (planned)
+`.cargo\config.toml` points `FFMPEG_DIR` at `third_party\ffmpeg`. `crates\vz-media\build.rs` copies the FFmpeg DLLs next to the programs Cargo builds, so nothing needs to be added to PATH.
 
-Xcode command line tools, `brew install rustup llvm pkg-config ffmpeg-lgpl` (or the same LGPL build via a script), `cargo run --release -p vidzcut`. Universal (Apple Silicon + Intel) `.app`/`.dmg` via `cargo-packager`. I cannot run macOS here, so a GitHub Actions workflow (`.github/workflows/build.yml`) will build Windows + macOS on every push once there is a GitHub repository.
+**The FFmpeg build must be LGPL.** The setup script refuses a build that contains `--enable-gpl`, and a unit test in `vz-media` fails if `libx264` or `libx265` are present.
 
-## Quality gate (before every commit)
+## Developer commands
 
 ```
 cargo fmt --all
-cargo clippy --workspace -- -D warnings
+cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 cargo build --release
+cargo run --release -p vidzcut
 ```
+
+Developer switches (environment variables) for checking the screen without a person:
+`VIDZCUT_START=editor`, `VIDZCUT_LAYOUT=default|player_right|big_timeline`, `VIDZCUT_CATEGORY=0..9`, `VIDZCUT_SHOT=path.png` (save a screenshot, then quit), `VIDZCUT_CONFIG_DIR=…` and `VIDZCUT_LOG_DIR=…` (use temporary folders so the real settings and logs are untouched).
+
+## Where vidzcut keeps its files (Windows)
+
+- Settings (panel sizes, layout): `%APPDATA%\vidzcut\config\ui_settings.json`
+- Log file: `%LOCALAPPDATA%\vidzcut\data\logs\vidzcut.log`
+
+## macOS (planned, not yet tested)
+
+1. Install Xcode command line tools: `xcode-select --install`.
+2. Install Rust: `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`.
+3. FFmpeg 9 development files + `pkg-config`. For *building and testing*, `brew install ffmpeg pkg-config` works; **the Homebrew build may be GPL, so it is not allowed in a release.** For release a LGPL build will be made by a script (Phase 7).
+4. `cargo run --release -p vidzcut`.
+
+`.github/workflows/build.yml` builds and tests on Windows and macOS for every push **once the project is on GitHub** (GitHub account/repo needed: owner decision). That is how macOS will be checked without a Mac.
+
+## Known gaps
+
+- macOS path untested; installers (Windows + macOS) come in Phase 7.
+- The setup script has been tested on a machine where everything was already installed; the "install what is missing" branches have not been exercised end-to-end.

@@ -1,6 +1,13 @@
-//! The project model: tracks, clips, time math, commands with undo/redo, save/load. No UI, no GPU.
+//! The project model: time, tracks, clips, commands with undo/redo, save/load.
 //!
-//! Part of vidzcut. See docs/ARCHITECTURE.md.
+//! This crate has no window, no GPU and no FFmpeg, so it can be tested very fast.
+//! See docs/ARCHITECTURE.md.
+
+pub mod project;
+pub mod time;
+
+pub use project::{AspectPreset, Canvas, FORMAT_VERSION, LoadError, Project};
+pub use time::{FrameRate, Micros, US_PER_SEC};
 
 /// Name of this crate, used in diagnostics.
 pub const CRATE: &str = "vz-core";

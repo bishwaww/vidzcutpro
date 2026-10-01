@@ -49,7 +49,11 @@ fn install_system_font(ctx: &egui::Context) {
             .font_data
             .insert("nirmala".into(), egui::FontData::from_owned(bytes).into());
         for family in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
-            fonts.families.entry(family).or_default().push("nirmala".into());
+            fonts
+                .families
+                .entry(family)
+                .or_default()
+                .push("nirmala".into());
         }
         ctx.set_fonts(fonts);
     } else {
@@ -66,7 +70,12 @@ fn render_with_cosmic() -> egui::ColorImage {
     let mut buffer = buffer.borrow_with(&mut fs);
     buffer.set_size(Some(w as f32), Some(h as f32));
     let text = LINES.join("\n");
-    buffer.set_text(&text, &Attrs::new().family(Family::Name("Nirmala UI")), Shaping::Advanced, None);
+    buffer.set_text(
+        &text,
+        &Attrs::new().family(Family::Name("Nirmala UI")),
+        Shaping::Advanced,
+        None,
+    );
     buffer.shape_until_scroll(true);
 
     let mut pixels = vec![egui::Color32::from_rgb(21, 21, 21); w * h];
@@ -80,11 +89,19 @@ fn render_with_cosmic() -> egui::ColorImage {
                 let a = c.a() as f32 / 255.0;
                 let dst = &mut pixels[py as usize * w + px as usize];
                 let mix = |s: u8, d: u8| (s as f32 * a + d as f32 * (1.0 - a)) as u8;
-                *dst = egui::Color32::from_rgb(mix(c.r(), dst.r()), mix(c.g(), dst.g()), mix(c.b(), dst.b()));
+                *dst = egui::Color32::from_rgb(
+                    mix(c.r(), dst.r()),
+                    mix(c.g(), dst.g()),
+                    mix(c.b(), dst.b()),
+                );
             }
         }
     });
-    egui::ColorImage { size: [w, h], source_size: egui::vec2(w as f32, h as f32), pixels }
+    egui::ColorImage {
+        size: [w, h],
+        source_size: egui::vec2(w as f32, h as f32),
+        pixels,
+    }
 }
 
 impl eframe::App for App {
@@ -93,7 +110,9 @@ impl eframe::App for App {
         let ctx = &ctx;
         let texture = self
             .cosmic_texture
-            .get_or_insert_with(|| ctx.load_texture("cosmic", self.cosmic_image.clone(), Default::default()))
+            .get_or_insert_with(|| {
+                ctx.load_texture("cosmic", self.cosmic_image.clone(), Default::default())
+            })
             .clone();
 
         egui::CentralPanel::default().show(ui, |ui| {
@@ -104,7 +123,10 @@ impl eframe::App for App {
                 }
                 cols[0].separator();
                 cols[0].label("Editable egui box (type Sinhala here):");
-                cols[0].add(egui::TextEdit::multiline(&mut self.editable).font(egui::FontId::proportional(30.0)));
+                cols[0].add(
+                    egui::TextEdit::multiline(&mut self.editable)
+                        .font(egui::FontId::proportional(30.0)),
+                );
 
                 cols[1].heading("cosmic-text (used for video text)");
                 cols[1].image((texture.id(), texture.size_vec2()));
@@ -125,7 +147,9 @@ impl eframe::App for App {
         if let Some(img) = shot {
             let _ = std::fs::create_dir_all("out");
             let rgba: Vec<u8> = img.pixels.iter().flat_map(|p| p.to_array()).collect();
-            if let Some(buf) = image::RgbaImage::from_raw(img.width() as u32, img.height() as u32, rgba) {
+            if let Some(buf) =
+                image::RgbaImage::from_raw(img.width() as u32, img.height() as u32, rgba)
+            {
                 let _ = buf.save("out/sinhala_spike.png");
                 println!("saved out/sinhala_spike.png");
             }
@@ -143,5 +167,9 @@ fn main() -> eframe::Result {
         viewport: egui::ViewportBuilder::default().with_inner_size([1360.0, 520.0]),
         ..Default::default()
     };
-    eframe::run_native("vidzcut Sinhala spike", options, Box::new(move |cc| Ok(Box::new(App::new(cc, stay)))))
+    eframe::run_native(
+        "vidzcut Sinhala spike",
+        options,
+        Box::new(move |cc| Ok(Box::new(App::new(cc, stay)))),
+    )
 }

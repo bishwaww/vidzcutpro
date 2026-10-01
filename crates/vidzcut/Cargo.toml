@@ -12,3 +12,6 @@ path = "src/main.rs"
 [dependencies]
 vz-core = { path = "../vz-core" }
 vz-ui = { path = "../vz-ui" }
+tracing.workspace = true
+tracing-subscriber.workspace = true
+directories.workspace = true

@@ -8,13 +8,16 @@ Legend: `[x]` done · `[ ]` to do · `[-]` skipped on purpose (reason given)
 - [x] Read the old prototype → `docs/PROTOTYPE_NOTES.md`
 - [x] Copy brand assets → `assets/brand/`
 - [x] Plan → `docs/ARCHITECTURE.md`, `docs/BUILDING.md`, this file, `CLAUDE.md`
-- [ ] **Owner OK on the plan + decisions** (see end of Phase 0 report)
-- [ ] 0a Install tools (Rust, C++ Build Tools, LLVM, LGPL FFmpeg) — after owner OK
-- [ ] 0b Cargo workspace with all crates as shells; fmt + clippy + test green
-- [ ] 0c Sinhala spike (egui vs custom text widget) with screenshot
-- [ ] 0d App window: theme, logo, top bar, 10 category tabs, asset panel, player, inspector, timeline (empty), draggable splitters, layout presets, saved sizes
-- [ ] 0e Home screen with "Create project"
-- [ ] 0f One-command setup script, tested BUILDING.md, macOS instructions + GitHub Actions file
+- [x] Owner OK on the plan + decisions (2026-10-02, see `docs/SPEC.md` "Spec changes")
+- [x] 0a Install tools: Rust 1.99, C++ Build Tools, LLVM 23, LGPL FFmpeg n9.0; FFmpeg verified from Rust (`vz-media` test)
+- [x] 0b Cargo workspace with all crates; fmt + clippy + test green
+- [x] 0c Sinhala spike: **egui 0.36 shows Sinhala correctly** (typing/cursor still to be checked by hand)
+- [x] 0d App window: theme, logo, top bar, 10 category tabs, asset panel, player, inspector, timeline (empty, ruler), draggable splitters, 3 layout presets + reset, sizes remembered
+- [x] 0e Home screen with "Create project" (project kept in memory; saving is Phase 1)
+- [x] 0f `scripts/setup-windows.ps1`, `run-vidzcut.bat`, BUILDING.md, macOS instructions, GitHub Actions file (**not yet run: needs a GitHub repo; macOS untested**)
+- [x] First real `vz-core` pieces: integer-µs time + exact frame rates, versioned `.vzp` project settings with load/save tests
+- [ ] Waiting for the owner's hand test (`docs/TESTING.md`, Phase 0 checklist) → then Phase 1
+- Known small gaps carried forward: tab icons are placeholder letters (Lucide icons planned); Noto Sans Sinhala/Tamil not bundled yet (Windows' Nirmala UI is used temporarily); GitHub repo for macOS CI.
 
 **Done when:** the owner runs one command and sees the vidzcut window on Windows, and the macOS build instructions exist.
 

@@ -1,0 +1,49 @@
+# Builds and tests vidzcut on Windows and macOS for every push.
+# (This only runs once the project is on GitHub. It is how we check macOS without owning a Mac.)
+name: build
+
+on:
+  push:
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: FFmpeg (LGPL, shared)
+        shell: pwsh
+        run: |
+          $url = 'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n9.0-latest-win64-lgpl-shared-9.0.zip'
+          New-Item -ItemType Directory -Force third_party | Out-Null
+          Invoke-WebRequest $url -OutFile third_party/ffmpeg.zip
+          Expand-Archive third_party/ffmpeg.zip -DestinationPath third_party -Force
+          Rename-Item third_party/ffmpeg-n9.0-latest-win64-lgpl-shared-9.0 third_party/ffmpeg
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
+      - run: cargo build --release
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: FFmpeg (installed with Homebrew)
+        # NOTE: the Homebrew FFmpeg may be a GPL build. It is only used here to compile and test.
+        # The macOS release build (Phase 7) must ship an LGPL build, see docs/BUILDING.md.
+        run: brew install ffmpeg pkg-config
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
+      - run: cargo build --release
