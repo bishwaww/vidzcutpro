@@ -150,10 +150,11 @@ impl History {
         command.apply(project)?;
         self.revision += 1;
         self.redo.clear();
-        if let (Some(key), Some(prev)) = (merge, self.undo.last_mut()) {
-            if self.merge_key == Some(key) && prev.absorb(&command) {
-                return Ok(());
-            }
+        if let (Some(key), Some(prev)) = (merge, self.undo.last_mut())
+            && self.merge_key == Some(key)
+            && prev.absorb(&command)
+        {
+            return Ok(());
         }
         self.merge_key = merge;
         self.undo.push(command);

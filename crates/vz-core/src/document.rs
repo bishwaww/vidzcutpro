@@ -87,15 +87,14 @@ impl Document {
         let dir = path.parent().unwrap_or_else(|| Path::new(""));
         for asset in &mut project.media {
             // The project folder may have been moved: look for the file next to the project.
-            if !asset.path.exists() {
-                if let Some(found) = asset
+            if !asset.path.exists()
+                && let Some(found) = asset
                     .relative_path
                     .as_ref()
                     .map(|r| dir.join(r))
                     .filter(|p| p.exists())
-                {
-                    asset.path = found;
-                }
+            {
+                asset.path = found;
             }
         }
         let mut doc = Self::new(project);
@@ -412,7 +411,7 @@ impl Document {
                 })
             })
             .collect();
-        items.sort_by(|a, b| b.saved_at_unix.cmp(&a.saved_at_unix));
+        items.sort_by_key(|i| std::cmp::Reverse(i.saved_at_unix));
         items
     }
 
