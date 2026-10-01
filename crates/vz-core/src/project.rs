@@ -1,8 +1,9 @@
 //! The project: the one thing that is saved to a `.vzp` file.
-//!
-//! Phase 0 only has the settings (name, canvas, frame rate). Tracks and clips arrive in Phase 1.
 
+use crate::ids::MediaId;
+use crate::media::MediaAsset;
 use crate::time::{FrameRate, Micros};
+use crate::timeline::Timeline;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -86,7 +87,7 @@ impl Canvas {
     }
 }
 
-/// Project settings and (later) everything in the project.
+/// Project settings, imported media and the timelines.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Project {
     pub format_version: u32,
@@ -94,12 +95,13 @@ pub struct Project {
     pub name: String,
     pub canvas: Canvas,
     pub frame_rate: FrameRate,
-    /// Total length of the timeline. Zero while the project is empty.
-    pub duration: Micros,
+    #[serde(default)]
+    pub media: Vec<MediaAsset>,
+    pub timelines: Vec<Timeline>,
 }
 
 impl Project {
-    /// A new, empty project: 16:9, 1920x1080, 30 fps.
+    /// A new, empty project: 16:9, 1920x1080, 30 fps, one empty timeline.
     pub fn new(name: impl Into<String>) -> Self {
         let (width, height) = AspectPreset::Wide16x9.size();
         Self {
@@ -108,8 +110,36 @@ impl Project {
             name: name.into(),
             canvas: Canvas { width, height },
             frame_rate: FrameRate::FPS_30,
-            duration: 0,
+            media: Vec::new(),
+            timelines: vec![Timeline::new("Timeline 01")],
         }
+    }
+
+    /// The timeline being edited. (Several timelines arrive in Phase 5; for now there is one.)
+    pub fn timeline(&self) -> &Timeline {
+        &self.timelines[0]
+    }
+
+    pub fn timeline_mut(&mut self) -> &mut Timeline {
+        &mut self.timelines[0]
+    }
+
+    /// Length of the timeline being edited. Zero while it is empty.
+    pub fn duration(&self) -> Micros {
+        self.timeline().duration()
+    }
+
+    pub fn asset(&self, id: MediaId) -> Option<&MediaAsset> {
+        self.media.iter().find(|m| m.id == id)
+    }
+
+    /// Imported files that can no longer be found on disk.
+    pub fn missing_media(&self) -> Vec<MediaId> {
+        self.media
+            .iter()
+            .filter(|m| !m.path.exists())
+            .map(|m| m.id)
+            .collect()
     }
 
     pub fn set_aspect(&mut self, preset: AspectPreset) {
@@ -161,8 +191,9 @@ mod tests {
         let p = Project::new("My first video");
         assert_eq!((p.canvas.width, p.canvas.height), (1920, 1080));
         assert_eq!(p.frame_rate, FrameRate::FPS_30);
-        assert_eq!(p.duration, 0);
+        assert_eq!(p.duration(), 0);
         assert_eq!(p.aspect_preset(), Some(AspectPreset::Wide16x9));
+        assert_eq!(p.timeline().main_track().clips.len(), 0);
     }
 
     #[test]

@@ -80,7 +80,7 @@ fn draw_canvas(ui: &egui::Ui, area: Rect, project: &Project) {
 
 fn controls(ui: &mut egui::Ui, state: &EditorState, project: &mut Project) {
     let tc = project.frame_rate.timecode(state.playhead);
-    let total = project.frame_rate.timecode(project.duration);
+    let total = project.frame_rate.timecode(project.duration());
     ui.add_space(14.0);
     ui.label(RichText::new(tc).monospace().color(theme::ACCENT));
     ui.label(

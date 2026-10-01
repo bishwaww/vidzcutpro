@@ -108,7 +108,9 @@ fn details(ui: &mut egui::Ui, project: &mut Project) {
                 ui.label(RichText::new("Not saved yet").color(theme::MUTED));
             });
             row(ui, "Duration", |ui| {
-                ui.label(RichText::new(project.frame_rate.timecode(project.duration)).monospace());
+                ui.label(
+                    RichText::new(project.frame_rate.timecode(project.duration())).monospace(),
+                );
             });
         });
 }
