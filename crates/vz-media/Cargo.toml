@@ -9,3 +9,7 @@ build = "build.rs"
 [dependencies]
 vz-core = { path = "../vz-core" }
 ffmpeg-next = { version = "9", default-features = false, features = ["codec", "format", "software-resampling", "software-scaling"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "bmp", "tiff", "gif"] }
+thiserror.workspace = true
+crossbeam-channel = "0.5"
+tracing.workspace = true

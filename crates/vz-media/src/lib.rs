@@ -1,16 +1,27 @@
 //! Probing, decoding, frame cache, thumbnails, waveforms and proxies (FFmpeg).
 //!
-//! Part of vidzcut. See docs/ARCHITECTURE.md. Phase 0 only proves that FFmpeg links and starts.
+//! Part of vidzcut. See docs/ARCHITECTURE.md.
+
+pub mod decoder;
+pub mod error;
+pub mod probe;
+pub mod testutil;
+pub mod worker;
+
+pub use decoder::{FrameSource, MaxSize, VideoDecoder, VideoFrame};
+pub use error::{MediaError, Result};
+pub use probe::{is_image_path, probe};
+pub use worker::{Event, MediaWorker};
 
 /// Name of this crate, used in diagnostics.
 pub const CRATE: &str = "vz-media";
 
 /// Start FFmpeg (safe to call many times).
-pub fn init() -> Result<(), ffmpeg_next::Error> {
+pub fn init() -> std::result::Result<(), ffmpeg_next::Error> {
     ffmpeg_next::init()
 }
 
-/// The version of the FFmpeg library vidzcut is linked with, e.g. `"avformat 63.x"`.
+/// The version of the FFmpeg library vidzcut is linked with, e.g. `"libavformat 63.1.102"`.
 pub fn ffmpeg_version() -> String {
     let v = ffmpeg_next::format::version();
     format!("libavformat {}.{}.{}", v >> 16, (v >> 8) & 0xff, v & 0xff)
@@ -18,6 +29,10 @@ pub fn ffmpeg_version() -> String {
 
 #[cfg(test)]
 mod tests {
+    use super::testutil::{self, Pattern, Spec};
+    use super::*;
+    use vz_core::{FrameRate, MediaKind, US_PER_SEC};
+
     #[test]
     fn crate_name_is_set() {
         assert_eq!(super::CRATE, "vz-media");
@@ -49,5 +64,202 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn probe_reads_a_video() {
+        let a = probe(&testutil::standard()).unwrap();
+        assert_eq!(a.kind, MediaKind::Video);
+        assert_eq!((a.width, a.height), (640, 360));
+        assert_eq!(a.frame_rate, Some(FrameRate::FPS_25));
+        assert!(a.has_audio);
+        assert!(
+            (a.duration - 4 * US_PER_SEC).abs() < 100_000,
+            "duration {}",
+            a.duration
+        );
+        assert_eq!(a.name, "standard_640x360_25fps_4s.mp4");
+    }
+
+    #[test]
+    fn probe_reports_a_video_without_sound() {
+        let p = testutil::video(
+            "silent_320x240.mp4",
+            Spec {
+                width: 320,
+                height: 240,
+                audio_hz: None,
+                seconds: 2,
+                ..Spec::default()
+            },
+        );
+        let a = probe(&p).unwrap();
+        assert!(!a.has_audio);
+        assert_eq!((a.width, a.height), (320, 240));
+    }
+
+    #[test]
+    fn probe_turns_phone_videos_upright() {
+        let p = testutil::video(
+            "phone_rotated.mp4",
+            Spec {
+                width: 640,
+                height: 360,
+                rotate: 90,
+                seconds: 1,
+                ..Spec::default()
+            },
+        );
+        let a = probe(&p).unwrap();
+        assert_eq!(
+            (a.width, a.height),
+            (360, 640),
+            "a sideways phone video is reported upright"
+        );
+    }
+
+    #[test]
+    fn probe_refuses_a_file_that_is_not_media() {
+        let path = std::env::temp_dir().join("vidzcut-not-media.txt");
+        std::fs::write(&path, "hello").unwrap();
+        assert!(probe(&path).is_err());
+        assert!(probe(std::path::Path::new("/no/such/file.mp4")).is_err());
+    }
+
+    #[test]
+    fn frames_are_found_by_time() {
+        let mut d = VideoDecoder::open(&testutil::standard(), MaxSize::FULL).unwrap();
+        let frame = 40_000; // 25 fps
+        for t in [
+            0, 40_000, 1_000_000, 1_019_999, 1_020_000, 3_960_000, 500_000, 2_000_000,
+        ] {
+            let f = d.frame_at(t).unwrap().expect("a frame");
+            assert!(
+                f.pts <= t && t < f.pts + frame,
+                "asked {t}, got a frame at {}",
+                f.pts
+            );
+            assert_eq!((f.width, f.height), (640, 360));
+        }
+    }
+
+    #[test]
+    fn playing_forward_visits_every_frame_once() {
+        let mut d = VideoDecoder::open(&testutil::standard(), MaxSize::FULL).unwrap();
+        let mut last = -1;
+        let mut count = 0;
+        for n in 0..100 {
+            let f = d.frame_at(n * 40_000 + 5_000).unwrap().unwrap();
+            assert!(f.pts > last, "frame {n} repeated or went backwards");
+            last = f.pts;
+            count += 1;
+        }
+        assert_eq!(count, 100);
+    }
+
+    #[test]
+    fn a_time_past_the_end_gives_the_last_frame() {
+        let mut d = VideoDecoder::open(&testutil::standard(), MaxSize::FULL).unwrap();
+        let f = d.frame_at(60 * US_PER_SEC).unwrap().unwrap();
+        assert!(f.pts >= 3_900_000, "got {}", f.pts);
+    }
+
+    #[test]
+    fn colours_come_out_in_the_right_order() {
+        let p = testutil::video(
+            "solid_red.mp4",
+            Spec {
+                pattern: Pattern::Solid(0xFF0000),
+                audio_hz: None,
+                seconds: 1,
+                width: 128,
+                height: 72,
+                ..Spec::default()
+            },
+        );
+        let mut d = VideoDecoder::open(&p, MaxSize::FULL).unwrap();
+        let f = d.frame_at(100_000).unwrap().unwrap();
+        let mid = ((36 * 128 + 64) * 4) as usize;
+        let (r, g, b, a) = (
+            f.rgba[mid],
+            f.rgba[mid + 1],
+            f.rgba[mid + 2],
+            f.rgba[mid + 3],
+        );
+        assert!(
+            r > 200 && g < 60 && b < 60 && a == 255,
+            "pixel was rgba({r},{g},{b},{a}), expected red"
+        );
+    }
+
+    #[test]
+    fn phone_videos_are_decoded_upright() {
+        let p = testutil::video(
+            "phone_rotated.mp4",
+            Spec {
+                width: 640,
+                height: 360,
+                rotate: 90,
+                seconds: 1,
+                ..Spec::default()
+            },
+        );
+        let mut d = VideoDecoder::open(&p, MaxSize::FULL).unwrap();
+        let f = d.frame_at(0).unwrap().unwrap();
+        assert_eq!((f.width, f.height), (360, 640));
+        assert_eq!(f.rgba.len(), 360 * 640 * 4);
+    }
+
+    #[test]
+    fn decoded_size_is_limited_but_keeps_the_shape() {
+        let mut d = VideoDecoder::open(&testutil::standard(), MaxSize::new(320, 320)).unwrap();
+        let f = d.frame_at(0).unwrap().unwrap();
+        assert_eq!((f.width, f.height), (320, 180));
+    }
+
+    #[test]
+    fn still_images_are_one_frame_for_any_time() {
+        let path = std::env::temp_dir().join("vidzcut-test-image.png");
+        image::RgbaImage::from_pixel(40, 20, image::Rgba([10, 200, 30, 255]))
+            .save(&path)
+            .unwrap();
+        let a = probe(&path).unwrap();
+        assert_eq!(
+            (a.kind, a.width, a.height, a.duration),
+            (MediaKind::Image, 40, 20, 0)
+        );
+        let mut s = FrameSource::open(&path, MaxSize::FULL).unwrap();
+        for t in [0, 5 * US_PER_SEC] {
+            let f = s.frame_at(t).unwrap().unwrap();
+            assert_eq!(&f.rgba[..4], &[10, 200, 30, 255]);
+        }
+    }
+
+    #[test]
+    fn the_worker_imports_and_makes_a_thumbnail() {
+        let worker = MediaWorker::start(|| {});
+        worker.import(testutil::standard());
+        worker.import("/no/such/file.mp4".into());
+        let mut imported = 0;
+        let mut failed = 0;
+        for _ in 0..200 {
+            for e in worker.poll() {
+                match e {
+                    Event::Imported { asset, poster } => {
+                        imported += 1;
+                        let p = poster.expect("a thumbnail");
+                        assert_eq!((p.width, p.height), (320, 180));
+                        assert_eq!(asset.kind, MediaKind::Video);
+                    }
+                    Event::ImportFailed { .. } => failed += 1,
+                    Event::Poster { .. } => {}
+                }
+            }
+            if imported + failed == 2 {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        assert_eq!((imported, failed), (1, 1));
     }
 }

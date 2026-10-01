@@ -8,3 +8,5 @@ publish = false
 [dependencies]
 vz-core = { path = "../vz-core" }
 vz-anim = { path = "../vz-anim" }
+vz-media = { path = "../vz-media" }
+tracing.workspace = true
