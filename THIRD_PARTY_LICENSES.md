@@ -3,7 +3,7 @@
 Every library, font and asset that ships with vidzcut is listed here with its licence.
 Rule (spec §0): MIT / Apache-2.0 / BSD / ISC / OFL (fonts) / CC0 only. FFmpeg is LGPL and dynamically linked. No GPL without the owner's approval.
 
-Status (2026-10-02, end of Phase 0): **direct dependencies only**. A full check of every indirect dependency (e.g. with `cargo-deny`) is planned for Phase 7, before any release.
+Status (2026-10-02, end of Phase 1): **direct dependencies only**. A full check of every indirect dependency (e.g. with `cargo-deny`) is planned for Phase 7, before any release.
 
 ## Rust crates (direct dependencies)
 | Crate | Version | Licence | Used in |
@@ -16,6 +16,10 @@ Status (2026-10-02, end of Phase 0): **direct dependencies only**. A full check 
 | thiserror | 2 | MIT OR Apache-2.0 | vz-core errors |
 | directories | 6 | MIT OR Apache-2.0 | config/log folders |
 | tracing, tracing-subscriber | 0.1 / 0.3 | MIT | logging |
+| cpal | 0.18 | Apache-2.0 | vz-audio (sound device) |
+| rfd | 0.17 | MIT | vz-ui (open/save dialogs) |
+| chrono | 0.4 | MIT OR Apache-2.0 | vz-ui (local time shown in the top bar) |
+| crossbeam-channel | 0.5 | MIT OR Apache-2.0 | vz-media, vz-audio, vz-ui (messages between threads) |
 | ffmpeg-next, ffmpeg-sys-next | 9.0 | **WTFPL** (very permissive "do what you want"; not on the spec's list, flagged for the owner) | vz-media (FFmpeg bindings) |
 
 ## Native libraries

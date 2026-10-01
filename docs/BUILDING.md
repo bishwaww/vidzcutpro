@@ -35,10 +35,14 @@ cargo run --release -p vidzcut
 Developer switches (environment variables) for checking the screen without a person:
 `VIDZCUT_START=editor`, `VIDZCUT_LAYOUT=default|player_right|big_timeline`, `VIDZCUT_CATEGORY=0..9`, `VIDZCUT_SHOT=path.png` (save a screenshot, then quit), `VIDZCUT_CONFIG_DIR=…` and `VIDZCUT_LOG_DIR=…` (use temporary folders so the real settings and logs are untouched).
 
+Drive the real window like a person (for automatic checks): `VIDZCUT_SCRIPT="wait:150;click:250,708;key:Ctrl+B;shot:out/a.png;quit"`. Other switches: `VIDZCUT_IMPORT`, `VIDZCUT_PLAY`, `VIDZCUT_AUTOEXPORT`, `VIDZCUT_NO_AUDIO` (see `crates/vz-ui/src/dev.rs`). The quality gate is `powershell -ExecutionPolicy Bypass -File scripts\gate.ps1 [-Release]`.
+
 ## Where vidzcut keeps its files (Windows)
 
 - Settings (panel sizes, layout): `%APPDATA%\vidzcut\config\ui_settings.json`
+- Recovery copies (autosave, every 30 s while there are unsaved changes): `%APPDATA%\vidzcut\config\recovery\`
 - Log file: `%LOCALAPPDATA%\vidzcut\data\logs\vidzcut.log`
+- Test videos made by the tests: `%TEMP%\vidzcut-fixtures` (safe to delete)
 
 ## macOS (planned, not yet tested)
 

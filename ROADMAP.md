@@ -4,7 +4,7 @@ Source: `docs/SPEC.md` §12. Tick items when they are built **and** checked. A p
 
 Legend: `[x]` done · `[ ]` to do · `[-]` skipped on purpose (reason given)
 
-## Phase 0 — Study & foundation  ← current
+## Phase 0 — Study & foundation  ✔ done
 - [x] Read the old prototype → `docs/PROTOTYPE_NOTES.md`
 - [x] Copy brand assets → `assets/brand/`
 - [x] Plan → `docs/ARCHITECTURE.md`, `docs/BUILDING.md`, this file, `CLAUDE.md`
@@ -16,17 +16,22 @@ Legend: `[x]` done · `[ ]` to do · `[-]` skipped on purpose (reason given)
 - [x] 0e Home screen with "Create project" (project kept in memory; saving is Phase 1)
 - [x] 0f `scripts/setup-windows.ps1`, `run-vidzcut.bat`, BUILDING.md, macOS instructions, GitHub Actions file (**not yet run: needs a GitHub repo; macOS untested**)
 - [x] First real `vz-core` pieces: integer-µs time + exact frame rates, versioned `.vzp` project settings with load/save tests
-- [ ] Waiting for the owner's hand test (`docs/TESTING.md`, Phase 0 checklist) → then Phase 1
+- [x] Owner approved Phase 0 and said "continue" (Phase 1 started 2026-10-02). The Sinhala *typing* check (cursor/Backspace over joined letters) is still open; it is part of the Phase 1 hand test.
 - Known small gaps carried forward: tab icons are placeholder letters (Lucide icons planned); Noto Sans Sinhala/Tamil not bundled yet (Windows' Nirmala UI is used temporarily); GitHub repo for macOS CI.
 
 **Done when:** the owner runs one command and sees the vidzcut window on Windows, and the macOS build instructions exist.
 
-## Phase 1 — Minimum real editor
-- [ ] Project model v1 (`vz-core`), commands + undo/redo, save/open `.vzp`, autosave + recovery
-- [ ] Import media (files, folders, drag-drop), probe, media grid with thumbnails
-- [ ] Decode video + audio, frame cache, playback with audio-master sync, scrub
-- [ ] Main track: drag media in, split, trim, delete, ripple delete, reorder
-- [ ] Export 1080p H.264 MP4 (hardware encoder + fallback), progress + cancel
+## Phase 1 — Minimum real editor  ← built, waiting for the owner's hand test
+- [x] 1a Project model, commands + undo/redo (merged drags), save/open `.vzp`, autosave every 30 s + crash recovery, relink of moved media (53 tests)
+- [x] 1b Import media (button, drag-drop from Explorer, many files), probing in a background thread, thumbnails, media grid ("Added" / "Missing" badges, + button, double-click, right-click)
+- [x] 1c Frame-accurate decoder (phone rotation, HD colour matrix BT.709), shared renderer (player and export use the same code), live preview thread, scrubbing
+- [x] 1d Sound: reader + mixer + sound-device engine; the sound card's clock drives playback; verified on the real device
+- [x] 1e Main-track editing: drag in from the media panel, reorder by dragging, trim by dragging edges, split (Ctrl+B), delete + ripple, Q / W, undo/redo, markers of selection, zoom, scroll, Fit
+- [x] 1f Save / Save as / Open, recent projects on the home screen, quit prompt, recovery prompt after a crash
+- [x] 1g Export 1080p (also 480p–4K) H.264 + AAC MP4: tries NVENC → QuickSync → AMD → OpenH264; progress, cancel, "Open folder"
+- [x] The project adopts the first clip's shape and frame rate (one undo step)
+- Verified with real footage (`D:/Gloma/with track.mp4`, 1080p 24 fps): plays at a steady 30 pictures/s; a 10 s 1080p export took 10.8 s (28 fps, Intel QuickSync).
+- Known limits carried forward: export speed is CPU-bound (Phase 7 improves it: threads, GPU colour conversion, hardware decode); NVENC needs NVIDIA driver 610+ with this FFmpeg build (this PC has 592, so QuickSync is used); no waveforms/filmstrips beyond one thumbnail per clip (Phase 2); only the main track exists (Phase 2 adds overlays/audio tracks); a project's frame-rate change after editing does not re-snap clips.
 
 **Done when:** the owner can cut a 2-minute video into pieces, reorder them, save, reopen, and export a playable MP4 identical to the preview.
 
