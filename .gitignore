@@ -1,0 +1,18 @@
+/target
+**/*.rs.bk
+Cargo.lock.bak
+
+# FFmpeg dev files and DLLs are downloaded by scripts/setup-windows.ps1, not committed
+/third_party/
+
+# test output, caches, local settings
+/out/
+/.scratch/
+*.log
+*.part
+
+# editors / OS
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
