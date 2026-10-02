@@ -8,6 +8,8 @@ use crate::ids::{ClipId, MediaId, TrackId};
 use crate::time::{FrameRate, Micros};
 use crate::timeline::Clip;
 
+pub mod free;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum EditError {
     #[error("that clip no longer exists")]
@@ -24,6 +26,12 @@ pub enum EditError {
     TrackNotFound(TrackId),
     #[error("that media file is not in the project")]
     MediaNotFound(MediaId),
+    #[error("there is already a clip there")]
+    Overlap,
+    #[error("the main track cannot be removed")]
+    MainTrack,
+    #[error("that kind of clip does not go on that kind of track")]
+    WrongTrack,
 }
 
 fn position(clips: &[Clip], id: ClipId) -> Result<usize, EditError> {
@@ -92,7 +100,7 @@ pub fn split(
         start: at,
         source_in: clip.source_in + (at - clip.start),
         duration: clip.end() - at,
-        media: clip.media,
+        ..clip.clone()
     };
     let mut out = clips.to_vec();
     out[i] = left;
@@ -177,13 +185,7 @@ mod tests {
     const RATE: FrameRate = FrameRate::FPS_25; // one frame = 40 000 us
 
     fn clip(seconds: i64) -> Clip {
-        Clip {
-            id: ClipId::new(),
-            media: MediaId::new(),
-            start: 0,
-            source_in: 0,
-            duration: seconds * US_PER_SEC,
-        }
+        Clip::media_clip(MediaId::new(), 0, 0, seconds * US_PER_SEC)
     }
 
     fn track(lengths: &[i64]) -> Vec<Clip> {

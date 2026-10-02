@@ -1,6 +1,8 @@
 //! The editing screen: top bar, asset panel, player, inspector and timeline.
 
 mod assets;
+mod canvas;
+mod geometry;
 mod inspector;
 mod player;
 mod timeline;
@@ -29,11 +31,23 @@ pub struct EditorState {
     pub zoom: f32,
     /// How far the timeline is scrolled to the right, in screen points.
     pub scroll_x: f32,
+    /// How far the tracks are scrolled down, in screen points.
+    pub scroll_y: f32,
+    /// A time the dragged clip is sticking to (a guide line is drawn there).
+    pub snap_guide: Option<Micros>,
     /// Width of the timeline lanes on screen, set while drawing (used by "Fit").
     pub lane_width: f32,
     pub playhead: Micros,
     pub playing: bool,
     pub selection: Vec<ClipId>,
+    /// Which tab of the inspector is open for a selected clip.
+    pub inspector_tab: inspector::Tab,
+    /// What the mouse is doing on the picture in the player.
+    pub canvas_drag: Option<canvas::CanvasDrag>,
+    /// Guide lines to draw while a layer is being moved.
+    pub guides: Vec<canvas::Guide>,
+    pub show_thirds: bool,
+    pub show_safe: bool,
     pub(crate) drag: Option<TimelineDrag>,
     next_merge_key: u64,
     pub toast: Option<(String, Instant)>,
@@ -51,10 +65,17 @@ impl Default for EditorState {
             preview_axis: false,
             zoom: 0.35,
             scroll_x: 0.0,
+            scroll_y: 0.0,
+            snap_guide: None,
             lane_width: 800.0,
             playhead: 0,
             playing: false,
             selection: Vec::new(),
+            inspector_tab: inspector::Tab::default(),
+            canvas_drag: None,
+            guides: Vec::new(),
+            show_thirds: false,
+            show_safe: false,
             drag: None,
             next_merge_key: 1,
             toast: None,

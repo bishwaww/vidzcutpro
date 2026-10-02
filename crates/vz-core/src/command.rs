@@ -4,11 +4,29 @@
 //! [`History::execute`].
 
 use crate::edit::EditError;
-use crate::ids::{MediaId, TrackId};
+use crate::ids::{ClipId, MediaId, TrackId};
 use crate::media::MediaAsset;
-use crate::project::{Canvas, Project};
+use crate::project::{Background, Canvas, Project};
 use crate::time::FrameRate;
-use crate::timeline::Clip;
+use crate::timeline::{Clip, Marker, Track};
+
+/// The three switches on a track header.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct TrackFlags {
+    pub locked: bool,
+    pub hidden: bool,
+    pub muted: bool,
+}
+
+impl TrackFlags {
+    pub fn of(track: &Track) -> Self {
+        Self {
+            locked: track.locked,
+            hidden: track.hidden,
+            muted: track.muted,
+        }
+    }
+}
 
 /// One undoable change.
 #[derive(Clone, Debug, PartialEq)]
@@ -21,6 +39,36 @@ pub enum Command {
         before: Vec<Clip>,
         after: Vec<Clip>,
         label: &'static str,
+    },
+    /// Change one clip's properties (position, size, opacity, text, …). Wherever the clip is.
+    SetClip {
+        id: ClipId,
+        before: Box<Clip>,
+        after: Box<Clip>,
+        label: &'static str,
+    },
+    /// Add a track at this position in the track list.
+    AddTrack {
+        track: Box<Track>,
+        index: usize,
+    },
+    /// Remove a track (it is kept here so undo can put it back, clips and all).
+    RemoveTrack {
+        track: Box<Track>,
+        index: usize,
+    },
+    SetTrackFlags {
+        track: TrackId,
+        before: TrackFlags,
+        after: TrackFlags,
+    },
+    SetMarkers {
+        before: Vec<Marker>,
+        after: Vec<Marker>,
+    },
+    SetBackground {
+        before: Background,
+        after: Background,
     },
     /// Point a media file at a new location on disk (after the file was moved).
     RelinkMedia {
@@ -52,12 +100,26 @@ pub enum Command {
     },
 }
 
+fn find_clip_mut(project: &mut Project, id: ClipId) -> Option<&mut Clip> {
+    project
+        .timeline_mut()
+        .tracks
+        .iter_mut()
+        .flat_map(|t| t.clips.iter_mut())
+        .find(|c| c.id == id)
+}
+
 impl Command {
     /// Name shown in "Undo …" menus.
     pub fn label(&self) -> &'static str {
         match self {
             Self::AddMedia(_) => "Import media",
-            Self::EditTrack { label, .. } => label,
+            Self::EditTrack { label, .. } | Self::SetClip { label, .. } => label,
+            Self::AddTrack { .. } => "Add track",
+            Self::RemoveTrack { .. } => "Remove track",
+            Self::SetTrackFlags { .. } => "Change track",
+            Self::SetMarkers { .. } => "Change markers",
+            Self::SetBackground { .. } => "Change background",
             Self::RelinkMedia { .. } => "Relink media",
             Self::Rename { .. } => "Rename project",
             Self::SetCanvas { .. } => "Change canvas",
@@ -80,6 +142,38 @@ impl Command {
                 }
                 t.clips = after.clone();
             }
+            Self::SetClip { id, after, .. } => {
+                let locked = project.timeline().track_of(*id).map(|t| t.locked);
+                if locked == Some(true) {
+                    return Err(EditError::Locked);
+                }
+                let clip = find_clip_mut(project, *id).ok_or(EditError::ClipNotFound(*id))?;
+                *clip = (**after).clone();
+            }
+            Self::AddTrack { track, index } => {
+                let tracks = &mut project.timeline_mut().tracks;
+                tracks.insert((*index).min(tracks.len()), (**track).clone());
+            }
+            Self::RemoveTrack { track, .. } => {
+                if track.kind == crate::timeline::TrackKind::Main {
+                    return Err(EditError::MainTrack);
+                }
+                let tracks = &mut project.timeline_mut().tracks;
+                let i = tracks
+                    .iter()
+                    .position(|t| t.id == track.id)
+                    .ok_or(EditError::TrackNotFound(track.id))?;
+                tracks.remove(i);
+            }
+            Self::SetTrackFlags { track, after, .. } => {
+                let t = project
+                    .timeline_mut()
+                    .track_mut(*track)
+                    .ok_or(EditError::TrackNotFound(*track))?;
+                (t.locked, t.hidden, t.muted) = (after.locked, after.hidden, after.muted);
+            }
+            Self::SetMarkers { after, .. } => project.timeline_mut().markers = after.clone(),
+            Self::SetBackground { after, .. } => project.background = *after,
             Self::RelinkMedia { id, after, .. } => {
                 let asset = project
                     .media
@@ -116,6 +210,25 @@ impl Command {
                     t.clips = before.clone();
                 }
             }
+            Self::SetClip { id, before, .. } => {
+                if let Some(clip) = find_clip_mut(project, *id) {
+                    *clip = (**before).clone();
+                }
+            }
+            Self::AddTrack { track, .. } => {
+                project.timeline_mut().tracks.retain(|t| t.id != track.id)
+            }
+            Self::RemoveTrack { track, index } => {
+                let tracks = &mut project.timeline_mut().tracks;
+                tracks.insert((*index).min(tracks.len()), (**track).clone());
+            }
+            Self::SetTrackFlags { track, before, .. } => {
+                if let Some(t) = project.timeline_mut().track_mut(*track) {
+                    (t.locked, t.hidden, t.muted) = (before.locked, before.hidden, before.muted);
+                }
+            }
+            Self::SetMarkers { before, .. } => project.timeline_mut().markers = before.clone(),
+            Self::SetBackground { before, .. } => project.background = *before,
             Self::RelinkMedia { id, before, .. } => {
                 if let Some(asset) = project.media.iter_mut().find(|m| m.id == *id) {
                     asset.path = before.clone();
@@ -147,9 +260,36 @@ impl Command {
                 *after = a2.clone();
                 true
             }
+            (
+                Self::SetClip { id, after, .. },
+                Self::SetClip {
+                    id: id2, after: a2, ..
+                },
+            ) if id == id2 => {
+                *after = a2.clone();
+                true
+            }
             (Self::Rename { after, .. }, Self::Rename { after: a2, .. }) => {
                 *after = a2.clone();
                 true
+            }
+            (
+                Self::Batch { commands, .. },
+                Self::Batch {
+                    commands: newer_commands,
+                    ..
+                },
+            ) if commands.len() == newer_commands.len() => {
+                // two moments of a drag that touched several tracks: merge command by command
+                let mut merged = commands.clone();
+                let all = merged
+                    .iter_mut()
+                    .zip(newer_commands)
+                    .all(|(old, new)| old.absorb(new));
+                if all {
+                    *commands = merged;
+                }
+                all
             }
             _ => false,
         }

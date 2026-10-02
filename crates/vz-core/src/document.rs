@@ -2,13 +2,14 @@
 //!
 //! This is what the screen holds. All edits go through the methods here, so each one is a [`Command`].
 
-use crate::command::{Command, History, MergeKey};
+use crate::command::{Command, History, MergeKey, TrackFlags};
+use crate::content::{Content, TextContent};
 use crate::edit::{self, EditError};
-use crate::ids::{ClipId, MediaId};
-use crate::media::MediaAsset;
-use crate::project::{AspectPreset, Canvas, LoadError, Project};
+use crate::ids::{ClipId, MediaId, TrackId};
+use crate::media::{MediaAsset, MediaKind};
+use crate::project::{AspectPreset, Background, Canvas, LoadError, Project};
 use crate::time::{FrameRate, Micros};
-use crate::timeline::Clip;
+use crate::timeline::{Clip, Track, TrackKind};
 use serde::{Deserialize, Serialize};
 use std::io;
 use std::path::{Path, PathBuf};
@@ -235,7 +236,124 @@ impl Document {
         )
     }
 
-    // ---- editing the main track --------------------------------------------------------------------
+    // ---- tracks ---------------------------------------------------------------------------------------------
+
+    /// Add an empty track on top (overlay and text) or at the end (audio). Returns its id.
+    pub fn add_track(&mut self, kind: TrackKind) -> Result<TrackId, DocError> {
+        if kind == TrackKind::Main {
+            return Err(EditError::MainTrack.into());
+        }
+        let tl = self.project.timeline();
+        let track = Track::new(kind, tl.next_track_name(kind));
+        let id = track.id;
+        let index = tl.tracks.len();
+        self.run(
+            Command::AddTrack {
+                track: Box::new(track),
+                index,
+            },
+            None,
+        )?;
+        Ok(id)
+    }
+
+    /// Remove a track and everything on it (undo brings it all back). The main track stays.
+    pub fn remove_track(&mut self, id: TrackId) -> Result<(), DocError> {
+        let tl = self.project.timeline();
+        let index = tl
+            .tracks
+            .iter()
+            .position(|t| t.id == id)
+            .ok_or(EditError::TrackNotFound(id))?;
+        let track = tl.tracks[index].clone();
+        self.run(
+            Command::RemoveTrack {
+                track: Box::new(track),
+                index,
+            },
+            None,
+        )
+    }
+
+    /// Change a track's lock, hide or mute switch.
+    pub fn set_track_flags(
+        &mut self,
+        id: TrackId,
+        change: impl FnOnce(&mut TrackFlags),
+    ) -> Result<(), DocError> {
+        let track = self
+            .project
+            .timeline()
+            .track(id)
+            .ok_or(EditError::TrackNotFound(id))?;
+        let before = TrackFlags::of(track);
+        let mut after = before;
+        change(&mut after);
+        if after == before {
+            return Ok(());
+        }
+        self.run(
+            Command::SetTrackFlags {
+                track: id,
+                before,
+                after,
+            },
+            None,
+        )
+    }
+
+    pub fn set_background(&mut self, background: Background) -> Result<(), DocError> {
+        if background == self.project.background {
+            return Ok(());
+        }
+        self.run(
+            Command::SetBackground {
+                before: self.project.background,
+                after: background,
+            },
+            None,
+        )
+    }
+
+    // ---- editing clips ---------------------------------------------------------------------------------------------
+
+    /// Which track holds a clip.
+    pub fn track_of(&self, clip: ClipId) -> Option<TrackId> {
+        self.project.timeline().track_of(clip).map(|t| t.id)
+    }
+
+    fn kind_of(&self, clip: ClipId) -> Result<(TrackId, TrackKind), EditError> {
+        let t = self
+            .project
+            .timeline()
+            .track_of(clip)
+            .ok_or(EditError::ClipNotFound(clip))?;
+        Ok((t.id, t.kind))
+    }
+
+    /// Replace a track's clip list with the result of `f`, as one undoable command.
+    fn edit_track(
+        &mut self,
+        track: TrackId,
+        label: &'static str,
+        merge: Option<MergeKey>,
+        f: impl FnOnce(&Track) -> Result<Vec<Clip>, EditError>,
+    ) -> Result<(), DocError> {
+        let command = {
+            let t = self
+                .project
+                .timeline()
+                .track(track)
+                .ok_or(EditError::TrackNotFound(track))?;
+            Command::EditTrack {
+                track,
+                before: t.clips.clone(),
+                after: f(t)?,
+                label,
+            }
+        };
+        self.run(command, merge)
+    }
 
     fn edit_main(
         &mut self,
@@ -243,15 +361,8 @@ impl Document {
         merge: Option<MergeKey>,
         f: impl FnOnce(&[Clip]) -> Result<Vec<Clip>, EditError>,
     ) -> Result<(), DocError> {
-        let track = self.project.timeline().main_track();
-        let after = f(&track.clips)?;
-        let command = Command::EditTrack {
-            track: track.id,
-            before: track.clips.clone(),
-            after,
-            label,
-        };
-        self.run(command, merge)
+        let main = self.project.timeline().main_track().id;
+        self.edit_track(main, label, merge, |t| f(&t.clips))
     }
 
     /// Put a media file on the main track at list position `index` (past the end = at the end).
@@ -261,6 +372,9 @@ impl Document {
             .project
             .asset(media)
             .ok_or(EditError::MediaNotFound(media))?;
+        if asset.kind == MediaKind::Audio {
+            return Err(EditError::WrongTrack.into());
+        }
         // The first clip on an empty timeline sets the shape and frame rate of the project (unless the
         // user already chose them). All of it is one undo step.
         let track = self.project.timeline().main_track();
@@ -270,15 +384,10 @@ impl Document {
         } else {
             self.project.frame_rate
         };
-        let clip = Clip {
-            id: ClipId::new(),
-            media,
-            start: 0,
-            source_in: 0,
-            duration: rate
-                .snap(asset.default_clip_duration())
-                .max(rate.frame_start(1)),
-        };
+        let duration = rate
+            .snap(asset.default_clip_duration())
+            .max(rate.frame_start(1));
+        let clip = Clip::media_clip(media, 0, 0, duration);
         let id = clip.id;
         let canvas = Project::canvas_for_picture(asset.width, asset.height);
         let edit = Command::EditTrack {
@@ -325,7 +434,279 @@ impl Document {
         self.add_clip(media, index)
     }
 
-    /// Cut the clip showing at time `t` in two. Returns the new (right-hand) clip's id.
+    /// Put a media file on a track at about `start` (moved later if something is in the way).
+    /// Pictures and videos go on the main or an overlay track; sound files on an audio track.
+    pub fn place_media(
+        &mut self,
+        track: TrackId,
+        media: MediaId,
+        start: Micros,
+    ) -> Result<ClipId, DocError> {
+        let kind = self
+            .project
+            .timeline()
+            .track(track)
+            .ok_or(EditError::TrackNotFound(track))?
+            .kind;
+        let asset = self
+            .project
+            .asset(media)
+            .ok_or(EditError::MediaNotFound(media))?;
+        if !kind_accepts_media(kind, asset.kind) {
+            return Err(EditError::WrongTrack.into());
+        }
+        if kind == TrackKind::Main {
+            return self.add_clip_at_time(media, start);
+        }
+        let rate = self.project.frame_rate;
+        let duration = rate
+            .snap(asset.default_clip_duration())
+            .max(rate.frame_start(1));
+        let clip = Clip::media_clip(media, 0, 0, duration);
+        self.place_free(track, clip, start)
+    }
+
+    /// Put a media file on a brand-new track (overlay for pictures and videos, audio for sound), as one undo step.
+    pub fn place_media_new_track(
+        &mut self,
+        media: MediaId,
+        start: Micros,
+    ) -> Result<(TrackId, ClipId), DocError> {
+        let asset = self
+            .project
+            .asset(media)
+            .ok_or(EditError::MediaNotFound(media))?;
+        let kind = if asset.kind == MediaKind::Audio {
+            TrackKind::Audio
+        } else {
+            TrackKind::Overlay
+        };
+        let rate = self.project.frame_rate;
+        let duration = rate
+            .snap(asset.default_clip_duration())
+            .max(rate.frame_start(1));
+        let mut clip = Clip::media_clip(media, rate.snap(start.max(0)), 0, duration);
+        clip.start = rate.snap(start.max(0));
+        let tl = self.project.timeline();
+        let mut track = Track::new(kind, tl.next_track_name(kind));
+        let (track_id, clip_id) = (track.id, clip.id);
+        track.clips.push(clip.clone());
+        // the track is added empty and then filled, so undo removes both together
+        let empty = Track {
+            clips: Vec::new(),
+            ..track
+        };
+        let commands = vec![
+            Command::AddTrack {
+                track: Box::new(empty),
+                index: tl.tracks.len(),
+            },
+            Command::EditTrack {
+                track: track_id,
+                before: Vec::new(),
+                after: vec![clip],
+                label: "Add clip",
+            },
+        ];
+        self.run(
+            Command::Batch {
+                label: "Add clip",
+                commands,
+            },
+            None,
+        )?;
+        Ok((track_id, clip_id))
+    }
+
+    /// Move a clip onto a brand-new track (overlay or audio) at about `start`, as one undo step.
+    pub fn move_clip_to_new_track(
+        &mut self,
+        clip: ClipId,
+        kind: TrackKind,
+        start: Micros,
+        merge: Option<MergeKey>,
+    ) -> Result<TrackId, DocError> {
+        let rate = self.project.frame_rate;
+        let (from_track, from_kind) = self.kind_of(clip)?;
+        let tl = self.project.timeline();
+        let mut moving = tl.clip(clip).ok_or(EditError::ClipNotFound(clip))?.clone();
+        if !kind_accepts_content(
+            kind,
+            &moving.content,
+            self.project.asset_kind(&moving.content),
+        ) || kind == TrackKind::Main
+        {
+            return Err(EditError::WrongTrack.into());
+        }
+        let from_clips = tl
+            .track(from_track)
+            .ok_or(EditError::TrackNotFound(from_track))?
+            .clips
+            .clone();
+        let removed = if from_kind.is_magnetic() {
+            edit::delete(&from_clips, &[clip])?
+        } else {
+            edit::free::delete(&from_clips, &[clip])?
+        };
+        moving.start = rate.snap(start.max(0));
+        let new_track = Track::new(kind, tl.next_track_name(kind));
+        let new_id = new_track.id;
+        let index = tl.tracks.len();
+        let commands = vec![
+            Command::AddTrack {
+                track: Box::new(new_track),
+                index,
+            },
+            Command::EditTrack {
+                track: from_track,
+                before: from_clips,
+                after: removed,
+                label: "Move clip",
+            },
+            Command::EditTrack {
+                track: new_id,
+                before: Vec::new(),
+                after: vec![moving],
+                label: "Move clip",
+            },
+        ];
+        self.run(
+            Command::Batch {
+                label: "Move clip",
+                commands,
+            },
+            merge,
+        )?;
+        Ok(new_id)
+    }
+
+    /// Move clips along the timeline by `delta` (they stay on their own tracks). Main-track clips are left alone,
+    /// because that track places its clips by itself. Nothing moves if any clip would land on another.
+    pub fn shift_clips(
+        &mut self,
+        ids: &[ClipId],
+        delta: Micros,
+        merge: Option<MergeKey>,
+    ) -> Result<(), DocError> {
+        let rate = self.project.frame_rate;
+        let delta = if delta >= 0 {
+            rate.snap(delta)
+        } else {
+            -rate.snap(-delta)
+        };
+        let mut commands = Vec::new();
+        for track in self
+            .project
+            .timeline()
+            .tracks
+            .iter()
+            .filter(|t| !t.kind.is_magnetic())
+        {
+            if !ids.iter().any(|id| track.clip(*id).is_some()) {
+                continue;
+            }
+            let mut clips = track.clips.clone();
+            for c in clips.iter_mut().filter(|c| ids.contains(&c.id)) {
+                c.start += delta;
+                if c.start < 0 {
+                    return Err(EditError::Overlap.into());
+                }
+            }
+            clips.sort_by_key(|c| c.start);
+            if clips.windows(2).any(|w| w[0].end() > w[1].start) {
+                return Err(EditError::Overlap.into());
+            }
+            commands.push(Command::EditTrack {
+                track: track.id,
+                before: track.clips.clone(),
+                after: clips,
+                label: "Move clips",
+            });
+        }
+        match commands.len() {
+            0 => Ok(()),
+            1 => self.run(commands.remove(0), merge),
+            _ => self.run(
+                Command::Batch {
+                    label: "Move clips",
+                    commands,
+                },
+                merge,
+            ),
+        }
+    }
+
+    /// Put a piece of text on a text (or overlay) track at about `start`.
+    pub fn add_text(
+        &mut self,
+        track: TrackId,
+        start: Micros,
+        duration: Micros,
+        text: TextContent,
+    ) -> Result<ClipId, DocError> {
+        let kind = self
+            .project
+            .timeline()
+            .track(track)
+            .ok_or(EditError::TrackNotFound(track))?
+            .kind;
+        if !matches!(kind, TrackKind::Text | TrackKind::Overlay) {
+            return Err(EditError::WrongTrack.into());
+        }
+        let rate = self.project.frame_rate;
+        let clip = Clip::text_clip(text, 0, rate.snap(duration).max(rate.frame_start(1)));
+        self.place_free(track, clip, start)
+    }
+
+    /// Insert a ready-made clip on a free track at the first free spot at or after `start`.
+    pub fn place_free(
+        &mut self,
+        track: TrackId,
+        mut clip: Clip,
+        start: Micros,
+    ) -> Result<ClipId, DocError> {
+        let rate = self.project.frame_rate;
+        let id = clip.id;
+        self.edit_track(track, "Add clip", None, |t| {
+            clip.start =
+                edit::free::first_free_start(&t.clips, rate.snap(start.max(0)), clip.duration);
+            edit::free::insert(&t.clips, clip)
+        })?;
+        Ok(id)
+    }
+
+    /// Change a clip's properties (position, size, opacity, text, …). `merge` joins a run of small
+    /// changes (a slider drag) into one undo step. Does nothing if nothing changed.
+    pub fn update_clip(
+        &mut self,
+        id: ClipId,
+        label: &'static str,
+        merge: Option<MergeKey>,
+        change: impl FnOnce(&mut Clip),
+    ) -> Result<(), DocError> {
+        let before = self
+            .project
+            .timeline()
+            .clip(id)
+            .ok_or(EditError::ClipNotFound(id))?
+            .clone();
+        let mut after = before.clone();
+        change(&mut after);
+        if after == before {
+            return Ok(());
+        }
+        self.run(
+            Command::SetClip {
+                id,
+                before: Box::new(before),
+                after: Box::new(after),
+                label,
+            },
+            merge,
+        )
+    }
+
+    /// Cut the clip showing at time `t` on the main track in two. Returns the new (right-hand) clip's id.
     pub fn split_at(&mut self, t: Micros) -> Result<ClipId, DocError> {
         let id = self
             .project
@@ -337,18 +718,180 @@ impl Document {
         self.split_clip(id, t)
     }
 
+    /// Cut any clip in two at timeline time `t`. Returns the new (right-hand) clip's id.
     pub fn split_clip(&mut self, clip: ClipId, t: Micros) -> Result<ClipId, DocError> {
         let rate = self.project.frame_rate;
         let new_id = ClipId::new();
-        self.edit_main("Split", None, |clips| {
-            edit::split(clips, clip, t, rate, new_id)
+        let (track, kind) = self.kind_of(clip)?;
+        self.edit_track(track, "Split", None, |tr| {
+            if kind.is_magnetic() {
+                edit::split(&tr.clips, clip, t, rate, new_id)
+            } else {
+                edit::free::split(&tr.clips, clip, t, rate, new_id)
+            }
         })?;
         Ok(new_id)
     }
 
-    /// Delete clips and close the gap (ripple delete).
+    /// Cut every clip in `ids` that covers time `t` (clips `t` does not cut through are left alone), as one
+    /// undo step. Returns the new right-hand clips.
+    pub fn split_clips(&mut self, ids: &[ClipId], t: Micros) -> Result<Vec<ClipId>, DocError> {
+        let rate = self.project.frame_rate;
+        let mut commands = Vec::new();
+        let mut created = Vec::new();
+        for track in self.project.timeline().tracks.iter().filter(|t| !t.locked) {
+            let mut clips = track.clips.clone();
+            let mut changed = false;
+            for id in ids.iter().filter(|id| track.clip(**id).is_some()) {
+                let new_id = ClipId::new();
+                let result = if track.kind.is_magnetic() {
+                    edit::split(&clips, *id, t, rate, new_id)
+                } else {
+                    edit::free::split(&clips, *id, t, rate, new_id)
+                };
+                match result {
+                    Ok(next) => {
+                        clips = next;
+                        created.push(new_id);
+                        changed = true;
+                    }
+                    Err(EditError::OutOfRange) => {}
+                    Err(e) => return Err(e.into()),
+                }
+            }
+            if changed {
+                commands.push(Command::EditTrack {
+                    track: track.id,
+                    before: track.clips.clone(),
+                    after: clips,
+                    label: "Split",
+                });
+            }
+        }
+        match commands.len() {
+            0 => Err(EditError::OutOfRange.into()),
+            1 => self.run(commands.remove(0), None).map(|()| created),
+            _ => self
+                .run(
+                    Command::Batch {
+                        label: "Split",
+                        commands,
+                    },
+                    None,
+                )
+                .map(|()| created),
+        }
+    }
+
+    /// Remove the part of each clip in `ids` before (`keep_right`) or after (`!keep_right`) time `t`
+    /// (the Q and W keys), as one undo step. Clips `t` does not cut through are left alone.
+    pub fn cut_clips_at(
+        &mut self,
+        ids: &[ClipId],
+        t: Micros,
+        keep_right: bool,
+    ) -> Result<(), DocError> {
+        let rate = self.project.frame_rate;
+        let t = rate.snap(t);
+        let mut commands = Vec::new();
+        for track in self.project.timeline().tracks.iter().filter(|t| !t.locked) {
+            let mut clips = track.clips.clone();
+            let mut changed = false;
+            for id in ids.iter().filter(|id| track.clip(**id).is_some()) {
+                let Some(clip) = clips.iter().find(|c| c.id == *id).cloned() else {
+                    continue;
+                };
+                if !(clip.start < t && t < clip.end()) {
+                    continue;
+                }
+                let media_len = clip
+                    .media()
+                    .and_then(|m| self.project.asset(m))
+                    .and_then(MediaAsset::max_clip_duration);
+                let result = match (keep_right, track.kind.is_magnetic()) {
+                    (true, true) => edit::trim_left(&clips, *id, t - clip.start, rate),
+                    (true, false) => edit::free::trim_left(&clips, *id, t - clip.start, rate),
+                    (false, true) => edit::trim_right(&clips, *id, t - clip.start, media_len, rate),
+                    (false, false) => {
+                        edit::free::trim_right(&clips, *id, t - clip.start, media_len, rate)
+                    }
+                };
+                match result {
+                    Ok(next) => {
+                        clips = next;
+                        changed = true;
+                    }
+                    Err(EditError::TooShort) => {}
+                    Err(e) => return Err(e.into()),
+                }
+            }
+            if changed {
+                let label = if keep_right {
+                    "Delete left"
+                } else {
+                    "Delete right"
+                };
+                commands.push(Command::EditTrack {
+                    track: track.id,
+                    before: track.clips.clone(),
+                    after: clips,
+                    label,
+                });
+            }
+        }
+        let label = if keep_right {
+            "Delete left"
+        } else {
+            "Delete right"
+        };
+        match commands.len() {
+            0 => Err(EditError::OutOfRange.into()),
+            1 => self.run(commands.remove(0), None),
+            _ => self.run(Command::Batch { label, commands }, None),
+        }
+    }
+
+    /// Delete clips. On the main track the gap closes; on the other tracks it stays.
     pub fn delete_clips(&mut self, ids: &[ClipId]) -> Result<(), DocError> {
-        self.edit_main("Delete", None, |clips| edit::delete(clips, ids))
+        let mut commands = Vec::new();
+        for track in &self.project.timeline().tracks {
+            let mine: Vec<ClipId> = ids
+                .iter()
+                .copied()
+                .filter(|id| track.clip(*id).is_some())
+                .collect();
+            if mine.is_empty() {
+                continue;
+            }
+            let after = if track.kind.is_magnetic() {
+                edit::delete(&track.clips, &mine)?
+            } else {
+                edit::free::delete(&track.clips, &mine)?
+            };
+            commands.push(Command::EditTrack {
+                track: track.id,
+                before: track.clips.clone(),
+                after,
+                label: "Delete",
+            });
+        }
+        if let Some(missing) = ids
+            .iter()
+            .find(|id| self.project.timeline().track_of(**id).is_none())
+        {
+            return Err(EditError::ClipNotFound(*missing).into());
+        }
+        match commands.len() {
+            0 => Ok(()),
+            1 => self.run(commands.remove(0), None),
+            _ => self.run(
+                Command::Batch {
+                    label: "Delete",
+                    commands,
+                },
+                None,
+            ),
+        }
     }
 
     /// Drag the left edge of a clip by `delta` (positive = shorter).
@@ -359,8 +902,13 @@ impl Document {
         merge: Option<MergeKey>,
     ) -> Result<(), DocError> {
         let rate = self.project.frame_rate;
-        self.edit_main("Trim", merge, |clips| {
-            edit::trim_left(clips, clip, delta, rate)
+        let (track, kind) = self.kind_of(clip)?;
+        self.edit_track(track, "Trim", merge, |t| {
+            if kind.is_magnetic() {
+                edit::trim_left(&t.clips, clip, delta, rate)
+            } else {
+                edit::free::trim_left(&t.clips, clip, delta, rate)
+            }
         })
     }
 
@@ -372,21 +920,120 @@ impl Document {
         merge: Option<MergeKey>,
     ) -> Result<(), DocError> {
         let rate = self.project.frame_rate;
+        let (track, kind) = self.kind_of(clip)?;
         let media_len = self
             .project
             .timeline()
-            .main_track()
             .clip(clip)
-            .and_then(|c| self.project.asset(c.media))
+            .and_then(|c| c.media())
+            .and_then(|m| self.project.asset(m))
             .and_then(MediaAsset::max_clip_duration);
-        self.edit_main("Trim", merge, |clips| {
-            edit::trim_right(clips, clip, new_duration, media_len, rate)
+        self.edit_track(track, "Trim", merge, |t| {
+            if kind.is_magnetic() {
+                edit::trim_right(&t.clips, clip, new_duration, media_len, rate)
+            } else {
+                edit::free::trim_right(&t.clips, clip, new_duration, media_len, rate)
+            }
         })
     }
 
-    /// Move a clip to list position `to` (counted after it is taken out).
+    /// Move a main-track clip to list position `to` (counted after it is taken out).
     pub fn move_clip(&mut self, clip: ClipId, to: usize) -> Result<(), DocError> {
         self.edit_main("Move clip", None, |clips| edit::move_clip(clips, clip, to))
+    }
+
+    /// Move a clip to a track at (about) time `start`. Works within a track and between tracks.
+    /// On the main track `start` only chooses the place in the order.
+    pub fn move_clip_to(
+        &mut self,
+        clip: ClipId,
+        to_track: TrackId,
+        start: Micros,
+        merge: Option<MergeKey>,
+    ) -> Result<(), DocError> {
+        let rate = self.project.frame_rate;
+        let (from_track, from_kind) = self.kind_of(clip)?;
+        let (moving, to_kind, to_clips, from_clips) = {
+            let tl = self.project.timeline();
+            let moving = tl.clip(clip).ok_or(EditError::ClipNotFound(clip))?.clone();
+            let to = tl
+                .track(to_track)
+                .ok_or(EditError::TrackNotFound(to_track))?;
+            let from = tl
+                .track(from_track)
+                .ok_or(EditError::TrackNotFound(from_track))?;
+            (moving, to.kind, to.clips.clone(), from.clips.clone())
+        };
+        let media_kind = self.project.asset_kind(&moving.content);
+        if !kind_accepts_content(to_kind, &moving.content, media_kind) {
+            return Err(EditError::WrongTrack.into());
+        }
+        if from_track == to_track {
+            return if to_kind.is_magnetic() {
+                let others: Vec<Clip> = to_clips.iter().filter(|c| c.id != clip).cloned().collect();
+                let index = edit::index_for_time(&others, start + moving.duration / 2);
+                self.edit_track(to_track, "Move clip", merge, |t| {
+                    edit::move_clip(&t.clips, clip, index)
+                })
+            } else {
+                self.edit_track(to_track, "Move clip", merge, |t| {
+                    edit::free::move_to(&t.clips, clip, start, rate)
+                })
+            };
+        }
+        // between two tracks: take it out of one and put it into the other, as one step
+        let removed = if from_kind.is_magnetic() {
+            edit::delete(&from_clips, &[clip])?
+        } else {
+            edit::free::delete(&from_clips, &[clip])?
+        };
+        let mut placed = moving;
+        let inserted = if to_kind.is_magnetic() {
+            let index = edit::index_for_time(&to_clips, start + placed.duration / 2);
+            edit::insert(&to_clips, index, placed)
+        } else {
+            placed.start = rate.snap(start.max(0));
+            edit::free::insert(&to_clips, placed)?
+        };
+        let commands = vec![
+            Command::EditTrack {
+                track: from_track,
+                before: from_clips,
+                after: removed,
+                label: "Move clip",
+            },
+            Command::EditTrack {
+                track: to_track,
+                before: to_clips,
+                after: inserted,
+                label: "Move clip",
+            },
+        ];
+        self.run(
+            Command::Batch {
+                label: "Move clip",
+                commands,
+            },
+            merge,
+        )
+    }
+}
+
+/// Which kinds of media a kind of track takes.
+pub fn kind_accepts_media(track: TrackKind, media: MediaKind) -> bool {
+    match track {
+        TrackKind::Main | TrackKind::Overlay => {
+            matches!(media, MediaKind::Video | MediaKind::Image)
+        }
+        TrackKind::Audio => matches!(media, MediaKind::Audio),
+        TrackKind::Text => false,
+    }
+}
+
+fn kind_accepts_content(track: TrackKind, content: &Content, media: Option<MediaKind>) -> bool {
+    match content {
+        Content::Text(_) => matches!(track, TrackKind::Text | TrackKind::Overlay),
+        Content::Media(_) => media.is_some_and(|m| kind_accepts_media(track, m)),
     }
 }
 
@@ -500,6 +1147,8 @@ impl Document {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_tracks;
 
 /// The project frame rate that suits a video: the standard rate nearest to the file's own.
 /// `None` for pictures and for files that do not say.
@@ -513,4 +1162,10 @@ fn frame_rate_for(asset: &MediaAsset) -> Option<FrameRate> {
             .abs()
             .total_cmp(&(b.as_f64() - wanted).abs())
     })
+}
+
+/// Can this clip live on a track of this kind? (Pictures and videos on the main or an overlay track,
+/// sound on an audio track, text on a text or overlay track.)
+pub fn track_accepts(project: &Project, track: TrackKind, clip: &Clip) -> bool {
+    kind_accepts_content(track, &clip.content, project.asset_kind(&clip.content))
 }

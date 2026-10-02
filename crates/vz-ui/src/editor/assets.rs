@@ -241,7 +241,7 @@ fn media_grid(ui: &mut egui::Ui, ctx: &mut Ctx<'_>) {
         .timeline()
         .tracks
         .iter()
-        .flat_map(|t| t.clips.iter().map(|c| c.media))
+        .flat_map(|t| t.clips.iter().filter_map(|c| c.media()))
         .collect();
     let assets: Vec<MediaAsset> = ctx
         .doc

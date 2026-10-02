@@ -34,7 +34,9 @@ pub fn show(ui: &mut egui::Ui, ctx: &mut Ctx<'_>) {
     let bar_area = Rect::from_min_max(Pos2::new(avail.min.x, avail.max.y - bar_h), avail.max);
 
     ui.allocate_exact_size(canvas_area.size(), Sense::hover());
-    draw_canvas(ui, canvas_area.shrink2(vec2(14.0, 8.0)), ctx);
+    if let Some(rect) = draw_canvas(ui, canvas_area.shrink2(vec2(14.0, 8.0)), ctx) {
+        super::canvas::show(ui, ctx, rect);
+    }
 
     let mut bar = ui.new_child(
         egui::UiBuilder::new()
@@ -44,9 +46,9 @@ pub fn show(ui: &mut egui::Ui, ctx: &mut Ctx<'_>) {
     controls(&mut bar, ctx);
 }
 
-fn draw_canvas(ui: &egui::Ui, area: Rect, ctx: &Ctx<'_>) {
+fn draw_canvas(ui: &egui::Ui, area: Rect, ctx: &Ctx<'_>) -> Option<Rect> {
     if area.width() < 20.0 || area.height() < 20.0 {
-        return;
+        return None;
     }
     let canvas = ctx.doc.project.canvas;
     let aspect = canvas.aspect();
@@ -90,6 +92,7 @@ fn draw_canvas(ui: &egui::Ui, area: Rect, ctx: &Ctx<'_>) {
         Stroke::new(1.0, theme::BORDER),
         StrokeKind::Outside,
     );
+    Some(rect)
 }
 
 fn controls(ui: &mut egui::Ui, ctx: &mut Ctx<'_>) {

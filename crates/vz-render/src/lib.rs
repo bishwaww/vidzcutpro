@@ -1,14 +1,19 @@
 //! Draws what a timeline looks like at one moment. The player and the exporter both call this,
 //! so what you see is what you export.
 //!
-//! Phase 1 draws on the CPU (video and still images, fitted into the canvas with black bars).
-//! The GPU compositor with effects, transitions and blend modes replaces the inside of
-//! [`Renderer::render`] in later phases; the question it answers stays the same.
+//! Phase 2 draws on the CPU, spread over all processor cores: the background, then every layer from the
+//! bottom up with its position, size, turn, crop, opacity and blend mode. The GPU compositor with
+//! effects and transitions replaces the inside of [`Renderer::render`] in later phases; the question
+//! it answers ("what does frame `t` look like?") stays the same.
 
+pub mod blend;
+pub mod composite;
+
+use composite::Placement;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use vz_core::{MediaKind, Micros, Project};
+use vz_core::{Background, Clip, Content, MediaKind, Micros, Project};
 use vz_media::{FrameSource, MaxSize, VideoFrame};
 
 /// Name of this crate, used in diagnostics.
@@ -17,9 +22,22 @@ pub const CRATE: &str = "vz-render";
 /// Draws frames. Keeps video files open between frames, because opening one is slow.
 #[derive(Default)]
 pub struct Renderer {
+    /// Open files with the picture size they were opened for.
     sources: HashMap<PathBuf, (MaxSize, FrameSource)>,
     /// Files that could not be opened or decoded, so we do not retry (and log) on every frame.
     broken: HashMap<PathBuf, String>,
+}
+
+/// How much bigger than the canvas a picture is decoded, so a layer scaled up stays sharp.
+/// Only three steps, so dragging a scale slider does not make files reopen on every change.
+fn decode_bucket(largest_scale: f32) -> u32 {
+    if largest_scale > 2.0 {
+        4
+    } else if largest_scale > 1.0 {
+        2
+    } else {
+        1
+    }
 }
 
 impl Renderer {
@@ -42,49 +60,133 @@ impl Renderer {
         let (w, h) = size;
         let mut canvas = VideoFrame::black(w, h);
         canvas.pts = t;
-        let wanted = MaxSize::fill_box(w, h);
+        // canvas pixels (what transforms are measured in) to output pixels
+        let to_output = w as f32 / project.canvas.width.max(1) as f32;
 
+        // pictures first, so a blurred background can use the lowest one
+        let mut drawn: Vec<(Arc<VideoFrame>, Placement, &Clip, f32)> = Vec::new();
         for layer in project.timeline().layers_at(t) {
-            let Some(asset) = project.asset(layer.clip.media) else {
+            let clip = layer.clip;
+            let local = clip.local_time(t);
+            let transform = clip.transform.at(local);
+            let largest = transform.scale_x.abs().max(transform.scale_y.abs());
+            let Content::Media(media) = &clip.content else {
+                continue;
+            }; // text arrives in step 2c
+            let Some(asset) = project.asset(*media) else {
                 continue;
             };
             if asset.kind == MediaKind::Audio {
                 continue;
             }
-            let path = &asset.path;
-            if self.broken.contains_key(path) {
-                continue;
-            }
-            // (re)open when new, or when the picture size we need has changed
-            if !matches!(self.sources.get(path), Some((size, _)) if *size == wanted) {
-                match FrameSource::open(path, wanted) {
-                    Ok(source) => {
-                        self.sources.insert(path.clone(), (wanted, source));
-                    }
-                    Err(e) => {
-                        tracing::warn!("cannot open {}: {e}", path.display());
-                        self.broken.insert(path.clone(), e.to_string());
-                        continue;
-                    }
-                }
-            }
-            let Some((_, source)) = self.sources.get_mut(path) else {
+            let bucket = decode_bucket(largest);
+            let Some(frame) = self.picture(&asset.path, layer.source_time, (w, h), bucket) else {
                 continue;
             };
-            match source.frame_at(layer.source_time) {
-                Ok(Some(frame)) => paste_centered(&mut canvas, &frame),
-                Ok(None) => {}
-                Err(e) => {
-                    tracing::warn!("cannot decode {}: {e}", path.display());
-                    self.broken.insert(path.clone(), e.to_string());
+            let display = (
+                frame.width as f32 / bucket as f32,
+                frame.height as f32 / bucket as f32,
+            );
+            let placement = Placement {
+                center: (
+                    w as f32 / 2.0 + transform.x * to_output,
+                    h as f32 / 2.0 + transform.y * to_output,
+                ),
+                size: display,
+                scale: (transform.scale_x, transform.scale_y),
+                rotation: transform.rotation,
+                flip_h: transform.flip_h,
+                flip_v: transform.flip_v,
+            };
+            let opacity = clip.opacity.value_at(local);
+            drawn.push((frame, placement, clip, opacity));
+        }
+
+        if let Background::Color(c) = project.background {
+            if c != vz_core::BLACK {
+                for px in canvas.rgba.as_chunks_mut::<4>().0 {
+                    px.copy_from_slice(&[c[0], c[1], c[2], 255]);
                 }
+            }
+        } else if let (Background::Blur(amount), Some((frame, ..))) =
+            (project.background, drawn.first())
+        {
+            blurred_cover(&mut canvas, frame, amount);
+        }
+
+        for (frame, placement, clip, opacity) in &drawn {
+            if is_plain(placement, clip, *opacity, &canvas, frame) {
+                paste_centered(&mut canvas, frame);
+            } else {
+                composite::draw(
+                    &mut canvas,
+                    frame,
+                    placement,
+                    clip.crop.clamped(),
+                    *opacity,
+                    clip.blend,
+                );
             }
         }
         Arc::new(canvas)
     }
+
+    /// The picture of a media file at file time `at`, decoded for an output of `size`.
+    fn picture(
+        &mut self,
+        path: &PathBuf,
+        at: Micros,
+        size: (u32, u32),
+        bucket: u32,
+    ) -> Option<Arc<VideoFrame>> {
+        if self.broken.contains_key(path) {
+            return None;
+        }
+        let wanted = MaxSize::fill_box(size.0 * bucket, size.1 * bucket);
+        // (re)open when new, or when the picture size we need has changed
+        if !matches!(self.sources.get(path), Some((open_for, _)) if *open_for == wanted) {
+            match FrameSource::open(path, wanted) {
+                Ok(source) => {
+                    self.sources.insert(path.clone(), (wanted, source));
+                }
+                Err(e) => {
+                    tracing::warn!("cannot open {}: {e}", path.display());
+                    self.broken.insert(path.clone(), e.to_string());
+                    return None;
+                }
+            }
+        }
+        let (_, source) = self.sources.get_mut(path)?;
+        match source.frame_at(at) {
+            Ok(frame) => frame,
+            Err(e) => {
+                tracing::warn!("cannot decode {}: {e}", path.display());
+                self.broken.insert(path.clone(), e.to_string());
+                None
+            }
+        }
+    }
 }
 
-/// Copy `src` into the middle of `dst` (the picture is already the right size to fit; the rest stays black).
+/// A layer that is only fitted into the canvas (no move, size, turn, crop, fade or blend) can be copied directly.
+fn is_plain(
+    p: &Placement,
+    clip: &Clip,
+    opacity: f32,
+    canvas: &VideoFrame,
+    frame: &VideoFrame,
+) -> bool {
+    clip.transform.is_identity()
+        && clip.blend == vz_core::BlendMode::Normal
+        && clip.crop.is_none()
+        && opacity >= 1.0
+        && frame.width <= canvas.width
+        && frame.height <= canvas.height
+        && (p.size.0 - frame.width as f32).abs() < 0.5
+        && (p.size.1 - frame.height as f32).abs() < 0.5
+}
+
+/// Copy `src` into the middle of `dst` (the picture is already the right size to fit; the rest stays as it was).
 fn paste_centered(dst: &mut VideoFrame, src: &VideoFrame) {
     let (dw, dh, sw, sh) = (
         dst.width as usize,
@@ -102,6 +204,39 @@ fn paste_centered(dst: &mut VideoFrame, src: &VideoFrame) {
         let s = ((src_y + row) * sw + src_x) * 4;
         let d = ((off_y + row) * dw + off_x) * 4;
         dst.rgba[d..d + copy_w * 4].copy_from_slice(&src.rgba[s..s + copy_w * 4]);
+    }
+}
+
+/// Fill the canvas with a blurred, enlarged copy of `frame` (the "blur" background).
+fn blurred_cover(canvas: &mut VideoFrame, frame: &VideoFrame, amount: f32) {
+    use image::imageops::{FilterType, blur, resize};
+    let (cw, ch) = (canvas.width, canvas.height);
+    // work small: a heavy blur on a tiny picture is cheap, and enlarging it back keeps it smooth
+    let (small_w, small_h) = ((cw / 8).max(8), (ch / 8).max(8));
+    let Some(src) = image::RgbaImage::from_raw(frame.width, frame.height, frame.rgba.clone())
+    else {
+        return;
+    };
+    // "cover": scale up until the picture fills the canvas, then cut the overhang
+    let scale = (small_w as f32 / frame.width as f32).max(small_h as f32 / frame.height as f32);
+    let (sw, sh) = (
+        ((frame.width as f32 * scale).ceil() as u32).max(small_w),
+        ((frame.height as f32 * scale).ceil() as u32).max(small_h),
+    );
+    let scaled = resize(&src, sw, sh, FilterType::Triangle);
+    let cropped = image::imageops::crop_imm(
+        &scaled,
+        (sw - small_w) / 2,
+        (sh - small_h) / 2,
+        small_w,
+        small_h,
+    )
+    .to_image();
+    let blurred = blur(&cropped, 1.0 + amount.clamp(0.0, 1.0) * 6.0);
+    let big = resize(&blurred, cw, ch, FilterType::Triangle);
+    canvas.rgba.copy_from_slice(big.as_raw());
+    for px in canvas.rgba.as_chunks_mut::<4>().0 {
+        px[3] = 255;
     }
 }
 
@@ -235,3 +370,6 @@ mod tests {
         assert!(r.problem_with(&"/no/such/file.mp4".into()).is_some());
     }
 }
+
+#[cfg(test)]
+mod tests_layers;

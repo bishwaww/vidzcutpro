@@ -1,6 +1,7 @@
 //! The project: the one thing that is saved to a `.vzp` file.
 
 use crate::ids::MediaId;
+use crate::layer::{BLACK, Color};
 use crate::media::MediaAsset;
 use crate::time::{FrameRate, Micros};
 use crate::timeline::Timeline;
@@ -8,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 /// Version of the `.vzp` file layout. Raise it when the layout changes and add a migration.
-pub const FORMAT_VERSION: u32 = 1;
+pub const FORMAT_VERSION: u32 = 2;
 
 /// Why a project file could not be opened.
 #[derive(Debug, thiserror::Error)]
@@ -74,6 +75,20 @@ impl AspectPreset {
     }
 }
 
+/// What shows behind the clips.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub enum Background {
+    Color(Color),
+    /// A blurred, enlarged copy of the picture underneath (0.0 to 1.0 = how much blur).
+    Blur(f32),
+}
+
+impl Default for Background {
+    fn default() -> Self {
+        Self::Color(BLACK)
+    }
+}
+
 /// Size of the picture in pixels.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Canvas {
@@ -99,6 +114,9 @@ pub struct Project {
     /// (like "Original" in other editors). Any manual change to either turns it off.
     #[serde(default)]
     pub auto_settings: bool,
+    /// What shows behind the clips where the picture does not cover the canvas.
+    #[serde(default)]
+    pub background: Background,
     #[serde(default)]
     pub media: Vec<MediaAsset>,
     pub timelines: Vec<Timeline>,
@@ -115,6 +133,7 @@ impl Project {
             canvas: Canvas { width, height },
             frame_rate: FrameRate::FPS_30,
             auto_settings: true,
+            background: Background::default(),
             media: Vec::new(),
             timelines: vec![Timeline::new("Timeline 01")],
         }
@@ -136,6 +155,11 @@ impl Project {
 
     pub fn asset(&self, id: MediaId) -> Option<&MediaAsset> {
         self.media.iter().find(|m| m.id == id)
+    }
+
+    /// The kind of media a clip's content plays (`None` for text).
+    pub fn asset_kind(&self, content: &crate::content::Content) -> Option<crate::media::MediaKind> {
+        content.media().and_then(|m| self.asset(m)).map(|a| a.kind)
     }
 
     /// Imported files that can no longer be found on disk.
@@ -221,9 +245,33 @@ impl Project {
 }
 
 /// Upgrade an older file to the current layout, one version at a time.
-/// There is nothing to upgrade yet (version 1 is the first); future versions add steps here.
+///
+/// * 1 → 2: a clip's `media` id became `content: {"Media": id}` (clips can now also be text).
 fn migrate(value: &mut serde_json::Value, from: u32) {
-    let _ = (value, from);
+    if from < 2 {
+        let timelines = value
+            .get_mut("timelines")
+            .and_then(serde_json::Value::as_array_mut);
+        for timeline in timelines.into_iter().flatten() {
+            let tracks = timeline
+                .get_mut("tracks")
+                .and_then(serde_json::Value::as_array_mut);
+            for track in tracks.into_iter().flatten() {
+                let clips = track
+                    .get_mut("clips")
+                    .and_then(serde_json::Value::as_array_mut);
+                for clip in clips.into_iter().flatten() {
+                    let Some(object) = clip.as_object_mut() else {
+                        continue;
+                    };
+                    if let Some(media) = object.remove("media") {
+                        object.insert("content".into(), serde_json::json!({ "Media": media }));
+                    }
+                }
+            }
+        }
+        value["format_version"] = serde_json::json!(2);
+    }
 }
 
 #[cfg(test)]
@@ -277,6 +325,45 @@ mod tests {
             }
             other => panic!("expected TooNew, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn a_phase_1_project_is_upgraded_when_opened() {
+        // a file as vidzcut saved it before text and overlays existed (clips had a plain `media` id)
+        let old = r#"{
+            "format_version": 1,
+            "id": "6b2f3a4e-0c43-4c7a-9d57-0a3b6d9a1111",
+            "name": "old project",
+            "canvas": {"width": 1080, "height": 1920},
+            "frame_rate": {"num": 24, "den": 1},
+            "auto_settings": false,
+            "media": [],
+            "timelines": [{
+                "id": "6b2f3a4e-0c43-4c7a-9d57-0a3b6d9a2222",
+                "name": "Timeline 01",
+                "tracks": [{
+                    "id": "6b2f3a4e-0c43-4c7a-9d57-0a3b6d9a3333",
+                    "kind": "Main", "name": "Main",
+                    "clips": [{
+                        "id": "6b2f3a4e-0c43-4c7a-9d57-0a3b6d9a4444",
+                        "media": "6b2f3a4e-0c43-4c7a-9d57-0a3b6d9a5555",
+                        "start": 0, "source_in": 1000000, "duration": 2000000
+                    }]
+                }]
+            }]
+        }"#;
+        let p = Project::from_json(old).unwrap();
+        assert_eq!(p.format_version, 2);
+        assert_eq!(p.name, "old project");
+        let clip = &p.timeline().main_track().clips[0];
+        assert!(matches!(clip.content, crate::content::Content::Media(_)));
+        assert_eq!(
+            (clip.start, clip.source_in, clip.duration),
+            (0, 1_000_000, 2_000_000)
+        );
+        assert!(clip.transform.is_identity());
+        assert_eq!(clip.opacity.value_at(0), 1.0);
+        assert_eq!(p.background, Background::default());
     }
 
     #[test]

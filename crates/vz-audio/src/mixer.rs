@@ -63,7 +63,7 @@ impl Mixer {
                 if from >= to {
                     continue;
                 }
-                let Some(asset) = project.asset(clip.media) else {
+                let Some(asset) = clip.media().and_then(|m| project.asset(m)) else {
                     continue;
                 };
                 if !asset.has_audio
