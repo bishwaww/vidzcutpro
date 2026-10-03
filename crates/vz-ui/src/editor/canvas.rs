@@ -193,6 +193,21 @@ pub fn show(ui: &mut egui::Ui, ctx: &mut Ctx<'_>, rect: Rect) {
         ctx.state.guides.clear();
     }
 
+    // eyedropper: the next click takes a colour from the picture
+    if ctx.state.eyedropper.is_some() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
+        if resp.clicked()
+            && let Some(pos) = resp.interact_pointer_pos()
+        {
+            let (u, v) = (((pos.x - rect.left()) / rect.width()).clamp(0.0, 1.0), ((pos.y - rect.top()) / rect.height()).clamp(0.0, 1.0));
+            if let (Some(color), Some(pick)) = (super::widgets::colour_under(ctx, u, v), ctx.state.eyedropper.take()) {
+                let _ = ctx.doc.update_clip(pick.clip, "Pick colour", None, |c| (pick.apply)(c, color));
+                super::widgets::remember(ctx, color);
+            }
+        }
+        return;
+    }
+
     // double-clicking text puts the cursor in its text box
     if resp.double_clicked()
         && let Some(pos) = resp.interact_pointer_pos()

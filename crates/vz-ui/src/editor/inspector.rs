@@ -197,6 +197,7 @@ mod looks;
 mod shape;
 mod speed;
 mod text;
+mod text_more;
 mod transition;
 
 use super::keyframes::{self, Prop};

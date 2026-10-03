@@ -1,7 +1,7 @@
 //! The Shape tab of the inspector: size, fill and outline of a drawn shape.
 
-use super::{Ctx, change, key, row, section_title, slider};
-use eframe::egui::{self, Color32, RichText, vec2};
+use super::{Ctx, change, row, section_title, slider};
+use eframe::egui::{self, RichText, vec2};
 use vz_core::{BLACK, Clip, ClipId, Color, Content, ShapeContent, ShapeKind, TextStroke};
 
 fn with_shape(c: &mut Clip, f: impl FnOnce(&mut ShapeContent)) {
@@ -16,18 +16,10 @@ fn color_button(
     id: ClipId,
     property: &'static str,
     color: Color,
-    apply: impl FnOnce(&mut ShapeContent, Color),
+    apply: impl Fn(&mut ShapeContent, Color) + Send + Sync + 'static,
 ) {
-    let mut c = Color32::from_rgba_unmultiplied(color[0], color[1], color[2], color[3]);
-    let resp = ui.color_edit_button_srgba(&mut c);
-    if resp.changed() {
-        let [r, g, b, a] = c.to_srgba_unmultiplied();
-        let _ = ctx
-            .doc
-            .update_clip(id, property, Some(key(id, property)), |clip| {
-                with_shape(clip, |s| apply(s, [r, g, b, a]));
-            });
-    }
+    let apply = std::sync::Arc::new(move |c: &mut Clip, col: Color| with_shape(c, |s| apply(s, col)));
+    super::super::widgets::pick_color(ui, ctx, id, property, color, apply);
 }
 
 pub fn shape_section(ui: &mut egui::Ui, ctx: &mut Ctx<'_>, clip: &Clip) {

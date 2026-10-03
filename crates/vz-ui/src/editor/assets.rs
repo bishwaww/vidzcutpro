@@ -190,6 +190,8 @@ pub fn show(ui: &mut egui::Ui, ctx: &mut Ctx<'_>) {
                 Category::Filters | Category::Effects | Category::Adjustment
             ) {
                 super::look_panel::show(ui, ctx);
+            } else if ctx.state.category == Category::Captions {
+                super::caption_panel::show(ui, ctx);
             } else if ctx.state.category == Category::Transitions {
                 super::transition_panel::show(ui, ctx);
             } else if ctx.state.category == Category::Stickers {

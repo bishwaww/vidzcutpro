@@ -11,6 +11,7 @@
 //! `VIDZCUT_SHOT_FRAME=n`     take the screenshot at frame n (default 10)
 //! `VIDZCUT_PLAYHEAD=secs`    start with the playhead here
 //! `VIDZCUT_PLAY=1`           start playing once the imported files are on the timeline
+//! `VIDZCUT_CAPTIONS=file.srt;style_id`  import this caption file at start, with a caption style (ids in vz-presets)
 //! `VIDZCUT_SCRIPT=steps`     drive the window like a person: steps are separated by `;`
 //!     `wait:N` (frames) · `move:x,y` · `click:x,y` · `rclick:x,y` · `drag:x1,y1,x2,y2` · `key:Ctrl+B` ·
 //!     `shot:path.png` · `quit`. Positions are in egui points (screen pixels / display scale).
@@ -171,6 +172,7 @@ pub struct DevHooks {
     pub playhead_secs: Option<f64>,
     pub auto_export: Option<PathBuf>,
     pub play: bool,
+    pub captions: Option<(PathBuf, String)>,
     pub imported: usize,
     shot_frame: u32,
     frames: u32,
@@ -198,6 +200,10 @@ impl DevHooks {
                 .unwrap_or_default(),
             auto_export: std::env::var_os("VIDZCUT_AUTOEXPORT").map(PathBuf::from),
             play: std::env::var("VIDZCUT_PLAY").is_ok_and(|v| v == "1"),
+            captions: std::env::var("VIDZCUT_CAPTIONS").ok().map(|v| {
+                let (file, style) = v.split_once(';').unwrap_or((v.as_str(), ""));
+                (PathBuf::from(file), style.to_owned())
+            }),
             imported: 0,
             playhead_secs: std::env::var("VIDZCUT_PLAYHEAD")
                 .ok()

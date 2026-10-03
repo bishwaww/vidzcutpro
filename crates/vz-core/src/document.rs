@@ -1347,6 +1347,8 @@ impl Document {
     }
 }
 
+mod caption_ops;
+pub use caption_ops::CaptionLook;
 mod clipboard;
 mod layers_auto;
 mod retime;

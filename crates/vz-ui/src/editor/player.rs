@@ -114,11 +114,14 @@ fn controls(ui: &mut egui::Ui, ctx: &mut Ctx<'_>) {
             .monospace()
             .color(theme::ACCENT),
     );
-    ui.label(
-        RichText::new(format!("/ {}", rate.timecode(ctx.doc.project.duration())))
-            .monospace()
-            .color(theme::MUTED),
-    );
+    let narrow = ui.available_width() < 560.0;
+    if !narrow {
+        ui.label(
+            RichText::new(format!("/ {}", rate.timecode(ctx.doc.project.duration())))
+                .monospace()
+                .color(theme::MUTED),
+        );
+    }
 
     ui.add_space(20.0);
     if transport(ui, Glyph::Previous, has_content, "Previous cut") {
@@ -155,7 +158,9 @@ fn controls(ui: &mut egui::Ui, ctx: &mut Ctx<'_>) {
                     }
                 }
             });
-        ui.label(RichText::new("Ratio").color(theme::MUTED).small());
+        if !narrow {
+            ui.label(RichText::new("Ratio").color(theme::MUTED).small());
+        }
     });
 }
 

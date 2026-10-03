@@ -2,7 +2,7 @@
 
 use super::{Ctx, change, key, row, section_title, slider};
 use crate::theme;
-use eframe::egui::{self, Color32, RichText, vec2};
+use eframe::egui::{self, RichText, vec2};
 use vz_core::{
     BLACK, Clip, ClipId, Color, Content, TextAlign, TextBackground, TextShadow, TextStroke,
     TextStyle,
@@ -11,40 +11,23 @@ use vz_core::{
 /// A style button: its letter, whether it is on, and what clicking it does.
 type Toggle = (&'static str, bool, fn(&mut TextStyle));
 
-fn to_color32(c: Color) -> Color32 {
-    Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3])
-}
-
-fn from_color32(c: Color32) -> Color {
-    let [r, g, b, a] = c.to_srgba_unmultiplied();
-    [r, g, b, a]
-}
-
 fn with_style(c: &mut Clip, f: impl FnOnce(&mut TextStyle)) {
     if let Content::Text(t) = &mut c.content {
         f(&mut t.style);
     }
 }
 
-/// A colour button. Changes while the picker is being dragged form one undo step.
+/// A colour button with the full picker. Changes while the picker is open form one undo step per drag.
 fn color_button(
     ui: &mut egui::Ui,
     ctx: &mut Ctx<'_>,
     id: ClipId,
     property: &'static str,
     color: Color,
-    apply: impl FnOnce(&mut TextStyle, Color),
+    apply: impl Fn(&mut TextStyle, Color) + Send + Sync + 'static,
 ) {
-    let mut c = to_color32(color);
-    let resp = ui.color_edit_button_srgba(&mut c);
-    if resp.changed() {
-        let new = from_color32(c);
-        let _ = ctx
-            .doc
-            .update_clip(id, property, Some(key(id, property)), |clip| {
-                with_style(clip, |s| apply(s, new));
-            });
-    }
+    let apply = std::sync::Arc::new(move |c: &mut Clip, col: Color| with_style(c, |s| apply(s, col)));
+    super::super::widgets::pick_color(ui, ctx, id, property, color, apply);
 }
 
 pub fn text_section(ui: &mut egui::Ui, ctx: &mut Ctx<'_>, clip: &Clip) {
@@ -56,12 +39,23 @@ pub fn text_section(ui: &mut egui::Ui, ctx: &mut Ctx<'_>, clip: &Clip) {
 
     section_title(ui, "Text");
     let mut words = content.text.clone();
+    let edit_id = egui::Id::new(("text_edit", id));
     let edit = ui.add(
         egui::TextEdit::multiline(&mut words)
+            .id(edit_id)
             .desired_rows(3)
             .desired_width(f32::INFINITY)
             .hint_text("Type your text"),
     );
+    // remember which words are selected, for the "selected words" section
+    if let Some(range) = egui::TextEdit::load_state(ui.ctx(), edit_id).and_then(|s| s.cursor.char_range()) {
+        let (a, b) = (range.primary.index.min(range.secondary.index), range.primary.index.max(range.secondary.index));
+        if a != b {
+            ctx.state.text_selection = Some((id, a.into(), b.into()));
+        } else if edit.has_focus() {
+            ctx.state.text_selection = None;
+        }
+    }
     if std::mem::take(&mut ctx.state.focus_text) {
         edit.request_focus();
     }
@@ -188,6 +182,8 @@ pub fn text_section(ui: &mut egui::Ui, ctx: &mut Ctx<'_>, clip: &Clip) {
     outline_section(ui, ctx, id, style);
     shadow_section(ui, ctx, id, style);
     background_section(ui, ctx, id, style);
+    ui.add_space(8.0);
+    super::text_more::more_sections(ui, ctx, clip);
 
     // a colour dragged in a picker is one undo step, however long the drag was
     if ui.input(|i| i.pointer.any_released()) {

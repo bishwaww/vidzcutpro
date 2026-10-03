@@ -109,6 +109,9 @@ impl VidzApp {
         if let Some(i) = dev.category {
             editor.category = editor::Category::ALL[i.min(editor::Category::ALL.len() - 1)];
         }
+        if let Some((_, style)) = &dev.captions {
+            editor.caption_style = style.clone();
+        }
         let screen = if dev.start_editor {
             Screen::Editor
         } else {
@@ -163,6 +166,13 @@ impl VidzApp {
         // developer switch: import files at start-up
         for path in app.dev.import.clone() {
             app.media.import(path);
+        }
+        // developer switch: import captions at start-up
+        if let Some((path, style)) = app.dev.captions.clone() {
+            match editor::import_caption_file(&mut app.doc, &path, &style) {
+                Ok(n) => app.editor.say(format!("Imported {n} captions")),
+                Err(e) => app.editor.say(format!("Captions: {e}")),
+            }
         }
         // developer switch: open a project at start-up (used to check the screen automatically)
         if let Some(path) = std::env::var_os("VIDZCUT_OPEN") {

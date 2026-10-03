@@ -2,6 +2,7 @@
 
 mod assets;
 mod canvas;
+mod caption_panel;
 mod geometry;
 mod inspector;
 mod keyframes;
@@ -12,6 +13,7 @@ mod sticker_panel;
 mod text_panel;
 mod timeline;
 mod topbar;
+mod widgets;
 mod transition_panel;
 
 use crate::settings::{LayoutPreset, UiSettings};
@@ -22,6 +24,7 @@ use std::time::{Duration, Instant};
 use vz_core::{ClipId, Document, MediaId, Micros};
 
 pub use assets::{Category, short_duration};
+pub use caption_panel::import_file as import_caption_file;
 pub use timeline::TimelineDrag;
 
 /// Everything the editor screen remembers while it is open (none of it is saved in the project).
@@ -60,6 +63,18 @@ pub struct EditorState {
     pub fonts: Vec<String>,
     /// Put the cursor in the inspector's text box on the next frame.
     pub focus_text: bool,
+    /// The words selected in the text box: (clip, first character, end).
+    pub text_selection: Option<(ClipId, usize, usize)>,
+    /// Waiting for a click on the picture to take a colour from it, and the colours used lately.
+    pub eyedropper: Option<widgets::Eyedropper>,
+    pub recent_colors: Vec<vz_core::Color>,
+    /// Captions: the style chosen, find / replace boxes, the time shift, and words per caption for imports.
+    pub caption_style: String,
+    pub captions_apply_all: bool,
+    pub find_text: String,
+    pub replace_text: String,
+    pub shift_seconds: f32,
+    pub import_words: usize,
     /// The scopes window: open or not, which scope, the latest picture and the scope's texture.
     pub show_scopes: bool,
     pub scope: scopes_window::Scope,
@@ -110,6 +125,15 @@ impl Default for EditorState {
             show_safe: false,
             fonts: Vec::new(),
             focus_text: false,
+            text_selection: None,
+            eyedropper: None,
+            recent_colors: Vec::new(),
+            caption_style: String::new(),
+            captions_apply_all: true,
+            find_text: String::new(),
+            replace_text: String::new(),
+            shift_seconds: 0.0,
+            import_words: 0,
             show_scopes: false,
             scope: scopes_window::Scope::default(),
             shown_frame: None,
@@ -365,7 +389,9 @@ fn handle_keys(egui_ctx: &egui::Context, ctx: &mut Ctx<'_>) {
         ctx.seek(ctx.doc.project.duration());
     }
     if pressed(Modifiers::NONE, Key::Escape) {
-        ctx.state.selection.clear();
+        if ctx.state.eyedropper.take().is_none() {
+            ctx.state.selection.clear();
+        }
     }
 }
 

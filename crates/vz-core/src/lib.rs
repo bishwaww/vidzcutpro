@@ -3,6 +3,7 @@
 //! This crate has no window, no GPU and no FFmpeg, so it can be tested very fast.
 //! See docs/ARCHITECTURE.md.
 
+pub mod captions;
 pub mod command;
 pub mod content;
 pub mod document;
@@ -22,7 +23,8 @@ pub use content::{
     TextContent, TextGlow, TextPhase, TextShadow, TextStroke, TextStyle, TextUnit, WordMode,
 };
 pub use document::{
-    ClipboardItem, DocError, Document, EXTENSION, RecoveryItem, kind_accepts_media, track_accepts,
+    CaptionLook, ClipboardItem, DocError, Document, EXTENSION, RecoveryItem, kind_accepts_media,
+    track_accepts,
 };
 pub use edit::EditError;
 pub use grade::{

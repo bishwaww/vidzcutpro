@@ -249,6 +249,9 @@ pub struct Track {
     pub clips: Vec<Clip>,
     #[serde(default)]
     pub transitions: Vec<Transition>,
+    /// A text track that holds captions (the caption list shows these clips).
+    #[serde(default)]
+    pub captions: bool,
 }
 
 impl Track {
@@ -262,6 +265,7 @@ impl Track {
             muted: false,
             clips: Vec::new(),
             transitions: Vec::new(),
+            captions: false,
         }
     }
 
