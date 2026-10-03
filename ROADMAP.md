@@ -35,13 +35,14 @@ Legend: `[x]` done · `[ ]` to do · `[-]` skipped on purpose (reason given)
 
 **Done when:** the owner can cut a 2-minute video into pieces, reorder them, save, reopen, and export a playable MP4 identical to the preview.
 
-## Phase 2 — Multi-track compositing & text
-- [ ] Overlay tracks, images, canvas ratios + backgrounds, opacity, blend modes, crop
-- [ ] On-canvas handles (move/scale/rotate), smart guides, safe zones
-- [ ] Audio tracks, waveforms, volume, fades
-- [ ] Snapping, magnet, linkage, multi-select, copy/paste, markers
-- [ ] Text clips + styling + **Sinhala/Tamil shaping**, bundled fonts
-- [ ] Stickers (import + a few built-in)
+## Phase 2 — Multi-track compositing & text  (built 2026-10-03, waiting for the owner's hand test)
+- [x] Overlay tracks, images, canvas ratios + backgrounds (colour / blur), opacity, 18 blend modes, crop
+- [x] On-canvas handles (move/scale/rotate), snap guides to the canvas edges and middle, thirds + safe-zone overlays (state exists; no button yet), arrow-key nudging (Alt+arrows)
+- [x] Audio tracks, waveforms, volume (also animatable in the model), fades, mute
+- [x] Snapping (clip edges, playhead, markers), magnet, multi-select, copy / cut / paste / duplicate (Ctrl+C/X/V/D), markers (M)
+- [x] Text clips + styling (font, size, B/I/U, colour, align, spacing, outline, shadow/glow, background box, wrap) + **Sinhala/Tamil shaping**, bundled fonts, 12 text styles
+- [x] Stickers: 12 built-in stickers and 12 plain shapes (own artwork, vector); PNG/GIF/WebP/APNG import through Media
+- [ ] Not yet: typing directly on the canvas (double-click opens the text box in the inspector instead), SVG sticker import (needs the owner's OK for resvg, MPL-2.0), "linkage" between video and its sound (field exists, no behaviour), safe-zone / grid buttons, GPU compositor (CPU renderer on all cores is fast enough for now)
 
 **Done when:** the owner can make a 9:16 short with a talking-head video, a logo overlay, a Sinhala headline and background music, and export it.
 

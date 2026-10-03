@@ -56,27 +56,75 @@ pub fn apply(ctx: &egui::Context) {
 /// egui ships Latin letters only. Sinhala and Tamil need a font that has them.
 /// TEMPORARY (Phase 0): use the font Windows already has. Phase 2 bundles Noto Sans Sinhala / Tamil (OFL).
 fn install_fonts(ctx: &egui::Context) {
-    let candidates = [
-        r"C:\Windows\Fonts\Nirmala.ttc",
-        "/System/Library/Fonts/Supplemental/Sinhala MN.ttc",
-        "/usr/share/fonts/truetype/noto/NotoSansSinhala-Regular.ttf",
-    ];
-    let Some(bytes) = candidates.iter().find_map(|p| std::fs::read(p).ok()) else {
-        tracing::warn!("no Sinhala-capable system font found; Sinhala text will show as boxes");
-        return;
-    };
+    // Sinhala and Tamil letters come with the program, so they look the same on every computer
     let mut fonts = FontDefinitions::default();
-    fonts
-        .font_data
-        .insert("fallback-indic".into(), FontData::from_owned(bytes).into());
-    for family in [FontFamily::Proportional, FontFamily::Monospace] {
+    let bundled: [(&str, &'static [u8]); 3] = [
+        (
+            "noto-sinhala",
+            include_bytes!("../../../assets/fonts/NotoSansSinhala-Variable.ttf"),
+        ),
+        (
+            "noto-tamil",
+            include_bytes!("../../../assets/fonts/NotoSansTamil-Variable.ttf"),
+        ),
+        ("lucide", include_bytes!("../../../assets/icons/lucide.ttf")),
+    ];
+    for (name, bytes) in bundled {
         fonts
-            .families
-            .entry(family)
-            .or_default()
-            .push("fallback-indic".into());
+            .font_data
+            .insert(name.into(), FontData::from_static(bytes).into());
     }
+    // a system font last, for symbols (arrows, bullets, full-width signs) the bundled fonts do not have
+    let system = [
+        r"C:\Windows\Fonts\Nirmala.ttc",
+        "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    ]
+    .iter()
+    .find_map(|p| std::fs::read(p).ok());
+    let has_system = system.is_some();
+    if let Some(bytes) = system {
+        fonts
+            .font_data
+            .insert("system-symbols".into(), FontData::from_owned(bytes).into());
+    }
+    for family in [FontFamily::Proportional, FontFamily::Monospace] {
+        let list = fonts.families.entry(family).or_default();
+        list.push("noto-sinhala".into());
+        list.push("noto-tamil".into());
+        if has_system {
+            list.push("system-symbols".into());
+        }
+    }
+    fonts
+        .families
+        .insert(icons::family(), vec!["lucide".into()]);
     ctx.set_fonts(fonts);
+}
+
+/// Icons from the Lucide icon font (ISC licence, see THIRD_PARTY_LICENSES.md).
+pub mod icons {
+    use eframe::egui::{FontFamily, FontId};
+
+    pub fn family() -> FontFamily {
+        FontFamily::Name("lucide".into())
+    }
+
+    /// A font to draw icons in, `size` points tall.
+    pub fn font(size: f32) -> FontId {
+        FontId::new(size, family())
+    }
+
+    pub const CLAPPERBOARD: char = '\u{e29b}';
+    pub const MUSIC: char = '\u{e122}';
+    pub const TYPE: char = '\u{e198}';
+    pub const STICKER: char = '\u{e302}';
+    pub const SPARKLES: char = '\u{e412}';
+    pub const BLEND: char = '\u{e59c}';
+    pub const CAPTIONS: char = '\u{e3a4}';
+    pub const WAND: char = '\u{e357}';
+    pub const SLIDERS: char = '\u{e29a}';
+    pub const TEMPLATE: char = '\u{e207}';
 }
 
 /// The big yellow call-to-action button.

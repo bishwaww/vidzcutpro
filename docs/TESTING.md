@@ -84,3 +84,28 @@ You need: 2–3 videos from your phone or camera (a short one with speech is bes
 17. Look at everything at your normal 125 % screen scaling.
 
 **Please tell me:** anything that crashed, froze, looked wrong, or felt slow; whether sound and picture stay in sync; and which of your own files (phone model/format) did not import.
+
+## Phase 2 — your checklist
+
+You need: a vertical or normal video with speech, a logo (PNG with a transparent background is best), a music file (MP3/WAV), and the Sinhala words you want as a headline.
+
+1. Import the video, the logo and the music (**Media → Import**). Click **+** on the video.
+2. Open the **Ratio** list under the player and choose **9:16**.
+   *You should see:* the picture becomes tall. In **Details** you can switch **Canvas background** to **Blur** (the video fills the empty space, blurred).
+3. Click **+** on the logo tile.
+   *You should see:* a new **Overlay 1** track above Main, with the logo in the middle of the picture.
+4. Click the logo in the player: *a yellow frame with square corners and a round handle appears.* Drag the logo to a corner (a pink guide line shows when it touches the middle or an edge), drag a corner square to make it smaller, drag the round handle to turn it. Hold **Shift** while turning for steps of 15°. One **Ctrl+Z** undoes a whole drag.
+5. In the right panel (**Video** tab) change **Opacity** and **Blend mode** and watch the picture.
+6. Click the **Text** tab (top left) → click **Sinhala headline**.
+   *You should see:* a text on a new **Text 1** track and the words `ශ්‍රී ලංකාව` in the player. Click into the text box on the right and **type your own Sinhala headline**. Try Backspace and the arrow keys. **Tell me if letters split, jump or look wrong.**
+7. Change **Font**, **Size**, **Colour**, tick **Outline**, **Shadow / glow**, **Background box**. Double-click the text in the player: the cursor jumps into the text box.
+8. Open **Stickers** → click a sticker (for example **Arrow**). Change its **Fill** colour on the right.
+9. Click the music tile's **+**.
+   *You should see:* an **Audio 1** track with a blue-green waveform. In the right panel (**Audio** tab) set **Volume** and **Fade in / Fade out**.
+10. Press **Space** to play. *You should hear the video's speech and the music together; the music fades as you set it.* Use the speaker icon on a track header to mute it.
+11. Select a clip and press **Ctrl+C**, move the playhead, **Ctrl+V** (pastes at the playhead). **Ctrl+D** makes a copy right after it. **Ctrl+X** cuts.
+12. Press **M** to put a marker on the ruler (press again to remove). Drag a clip near it: it sticks to the marker.
+13. Drag a clip from one track to the empty strip below or above the tracks: a new track is made. Lock (padlock) a track: its clips cannot be changed.
+14. **Export** (Ctrl+E). Play the MP4: the headline, logo, sticker, video and music must look and sound like the player.
+
+**Please tell me:** anything that looked wrong, especially Sinhala/Tamil letters (in the player, in the exported video, and while typing); anything slow; anything confusing.

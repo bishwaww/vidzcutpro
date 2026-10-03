@@ -37,6 +37,23 @@ impl Category {
         Self::Templates,
     ];
 
+    /// The icon drawn on the tab.
+    pub fn icon(self) -> char {
+        use crate::theme::icons;
+        match self {
+            Self::Media => icons::CLAPPERBOARD,
+            Self::Audio => icons::MUSIC,
+            Self::Text => icons::TYPE,
+            Self::Stickers => icons::STICKER,
+            Self::Effects => icons::SPARKLES,
+            Self::Transitions => icons::BLEND,
+            Self::Captions => icons::CAPTIONS,
+            Self::Filters => icons::WAND,
+            Self::Adjustment => icons::SLIDERS,
+            Self::Templates => icons::TEMPLATE,
+        }
+    }
+
     pub fn label(self) -> &'static str {
         match self {
             Self::Media => "Media",
@@ -191,7 +208,7 @@ fn category_tabs(ui: &mut egui::Ui, ctx: &mut Ctx<'_>) {
                     if resp.hovered() && !selected {
                         painter.rect_filled(rect, CornerRadius::same(8), theme::PANEL_2);
                     }
-                    // placeholder icon: a tile with the first letter (real icons come later)
+                    // the icon on a rounded tile
                     let tile = Rect::from_center_size(
                         Pos2::new(rect.center().x, rect.top() + 18.0),
                         vec2(26.0, 26.0),
@@ -205,8 +222,8 @@ fn category_tabs(ui: &mut egui::Ui, ctx: &mut Ctx<'_>) {
                     painter.text(
                         tile.center(),
                         Align2::CENTER_CENTER,
-                        &cat.label()[..1],
-                        FontId::proportional(14.0),
+                        cat.icon(),
+                        theme::icons::font(15.0),
                         fg,
                     );
                     painter.text(

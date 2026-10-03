@@ -293,3 +293,63 @@ fn real_footage_exports_quickly_and_correctly() {
     );
     assert!((number(&info["format"]["duration"]) - 10.0).abs() < 0.2);
 }
+
+#[test]
+fn text_shapes_and_overlays_are_in_the_exported_file() {
+    use vz_core::{ShapeContent, ShapeKind, TextContent};
+    let green = testutil::video(
+        "solid_green_layers.mp4",
+        Spec {
+            pattern: Pattern::Solid(0x00A000),
+            seconds: 3,
+            ..Spec::default()
+        },
+    );
+    let mut doc = doc_with(&[green]);
+    doc.set_frame_rate(vz_core::FrameRate::FPS_25).unwrap();
+    let mut headline = TextContent::new("ශ්‍රී ලංකාව");
+    headline.style.size = 160.0;
+    headline.style.bold = true;
+    doc.add_text_auto(0, 3 * US_PER_SEC, headline).unwrap();
+    let mut star = ShapeContent::new(ShapeKind::Star);
+    star.fill = Some([255, 0, 0, 255]);
+    doc.add_shape_auto(US_PER_SEC, 2 * US_PER_SEC, star)
+        .unwrap();
+
+    let (_, out) = export_to(&doc, "layers.mp4", 360);
+    let mut file = VideoDecoder::open(&out, MaxSize::FULL).unwrap();
+    let mut preview = Renderer::new();
+    for t in [500_000, 2_000_000] {
+        let from_file = file.frame_at(t).unwrap().unwrap();
+        let expected = preview.render(&doc.project, t, (640, 360));
+        let diff: f64 = from_file
+            .rgba
+            .iter()
+            .zip(&expected.rgba)
+            .map(|(a, b)| (f64::from(*a) - f64::from(*b)).abs())
+            .sum::<f64>()
+            / from_file.rgba.len() as f64;
+        assert!(
+            diff < 8.0,
+            "frame at {t} differs from the preview by {diff}"
+        );
+        // the text (white) is in the file
+        let white = from_file
+            .rgba
+            .chunks(4)
+            .filter(|p| p[0] > 200 && p[1] > 200 && p[2] > 200)
+            .count();
+        assert!(white > 300, "text missing at {t}: {white} white pixels");
+    }
+    // the red star only appears after one second
+    let early = file.frame_at(500_000).unwrap().unwrap();
+    let later = file.frame_at(2_000_000).unwrap().unwrap();
+    let red = |f: &vz_media::VideoFrame| {
+        f.rgba
+            .chunks(4)
+            .filter(|p| p[0] > 200 && p[1] < 60 && p[2] < 60)
+            .count()
+    };
+    assert_eq!(red(&early), 0);
+    assert!(red(&later) > 500, "{}", red(&later));
+}
