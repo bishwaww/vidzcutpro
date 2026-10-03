@@ -4073,7 +4073,9 @@ version = "0.0.1"
 dependencies = [
  "cosmic-text",
  "image",
+ "serde_json",
  "tracing",
+ "vz-anim",
  "vz-core",
 ]
 

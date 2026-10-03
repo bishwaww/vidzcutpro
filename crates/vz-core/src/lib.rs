@@ -18,8 +18,8 @@ pub mod timeline;
 
 pub use command::{Command, History, MergeKey, TrackFlags};
 pub use content::{
-    Content, ShapeContent, ShapeKind, TextAlign, TextBackground, TextContent, TextShadow,
-    TextStroke, TextStyle,
+    Content, ShapeContent, ShapeKind, StyleSpan, TextAlign, TextAnimator, TextBackground, TextCase,
+    TextContent, TextGlow, TextPhase, TextShadow, TextStroke, TextStyle, TextUnit, WordMode,
 };
 pub use document::{
     ClipboardItem, DocError, Document, EXTENSION, RecoveryItem, kind_accepts_media, track_accepts,
@@ -30,7 +30,10 @@ pub use grade::{
     MaskShape, Wheel, Wheels,
 };
 pub use ids::{ClipId, GroupId, LinkId, MarkerId, MediaId, TimelineId, TrackId};
-pub use layer::{AnimRef, BLACK, BlendMode, Color, Crop, PlacedTransform, Transform, WHITE};
+pub use layer::{
+    AnimRef, BLACK, BlendMode, Color, Crop, Gradient, GradientKind, PlacedTransform, Transform,
+    WHITE,
+};
 pub use media::{DEFAULT_IMAGE_DURATION, MediaAsset, MediaKind};
 pub use project::{AspectPreset, Background, Canvas, FORMAT_VERSION, LoadError, Project};
 pub use time::{FrameRate, Micros, US_PER_SEC};

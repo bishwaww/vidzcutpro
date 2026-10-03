@@ -391,7 +391,7 @@ impl Renderer {
                 }
                 let image = self
                     .text
-                    .render(text, text_unit * to_output * bucket as f32);
+                    .render_at(text, text_unit * to_output * bucket as f32, local, clip.duration);
                 let display = (
                     image.width as f32 / bucket as f32,
                     image.height as f32 / bucket as f32,

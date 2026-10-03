@@ -255,3 +255,112 @@ pub struct AnimRef {
     pub preset: String,
     pub duration: crate::time::Micros,
 }
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum GradientKind {
+    #[default]
+    Linear,
+    /// From the middle outwards.
+    Radial,
+}
+
+/// A colour that changes across a shape or a piece of text.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Gradient {
+    pub kind: GradientKind,
+    /// Direction of a linear gradient in degrees (0 = left to right, 90 = top to bottom).
+    pub angle: f32,
+    /// Colours at positions 0 to 1 along the gradient, in order.
+    pub stops: Vec<(f32, Color)>,
+}
+
+impl Gradient {
+    pub fn two(from: Color, to: Color, angle: f32) -> Self {
+        Self {
+            kind: GradientKind::Linear,
+            angle,
+            stops: vec![(0.0, from), (1.0, to)],
+        }
+    }
+
+    /// The colour at position `t` (0 to 1) along the gradient.
+    pub fn color_at(&self, t: f32) -> Color {
+        let t = t.clamp(0.0, 1.0);
+        let (Some(first), Some(last)) = (self.stops.first(), self.stops.last()) else {
+            return WHITE;
+        };
+        if t <= first.0 {
+            return first.1;
+        }
+        if t >= last.0 {
+            return last.1;
+        }
+        let i = self
+            .stops
+            .partition_point(|s| s.0 <= t)
+            .clamp(1, self.stops.len() - 1);
+        let (a, b) = (self.stops[i - 1], self.stops[i]);
+        let f = ((t - a.0) / (b.0 - a.0).max(1e-6)).clamp(0.0, 1.0);
+        let mut out = [0u8; 4];
+        for k in 0..4 {
+            out[k] = (f32::from(a.1[k]) + (f32::from(b.1[k]) - f32::from(a.1[k])) * f + 0.5) as u8;
+        }
+        out
+    }
+
+    /// The colour at a place in a box: (`u`, `v`) are 0 to 1 from the left and from the top.
+    pub fn at(&self, u: f32, v: f32) -> Color {
+        let t = match self.kind {
+            GradientKind::Linear => {
+                let (sin, cos) = self.angle.to_radians().sin_cos();
+                0.5 + ((u - 0.5) * cos + (v - 0.5) * sin) / (cos.abs() + sin.abs()).max(1e-6)
+            }
+            GradientKind::Radial => ((u - 0.5).powi(2) + (v - 0.5).powi(2)).sqrt() * 2.0,
+        };
+        self.color_at(t)
+    }
+}
+
+#[cfg(test)]
+mod gradient_tests {
+    use super::*;
+
+    #[test]
+    fn a_two_colour_gradient_blends_between_its_ends() {
+        let g = Gradient::two([0, 0, 0, 255], [200, 100, 50, 255], 0.0);
+        assert_eq!(g.color_at(0.0), [0, 0, 0, 255]);
+        assert_eq!(g.color_at(1.0), [200, 100, 50, 255]);
+        assert_eq!(g.color_at(0.5), [100, 50, 25, 255]);
+        assert_eq!(g.color_at(-3.0), [0, 0, 0, 255]);
+    }
+
+    #[test]
+    fn a_linear_gradient_follows_its_angle_and_a_radial_one_the_distance() {
+        let across = Gradient::two([0, 0, 0, 255], [255, 255, 255, 255], 0.0);
+        assert!(across.at(0.0, 0.5)[0] < 10 && across.at(1.0, 0.5)[0] > 245);
+        assert!((i32::from(across.at(0.5, 0.0)[0]) - i32::from(across.at(0.5, 1.0)[0])).abs() < 3);
+        let down = Gradient::two([0, 0, 0, 255], [255, 255, 255, 255], 90.0);
+        assert!(down.at(0.5, 0.0)[0] < 10 && down.at(0.5, 1.0)[0] > 245);
+        let radial = Gradient {
+            kind: GradientKind::Radial,
+            ..across
+        };
+        assert!(radial.at(0.5, 0.5)[0] < 10 && radial.at(1.0, 0.5)[0] > 245);
+    }
+
+    #[test]
+    fn many_stops_are_followed_in_order() {
+        let g = Gradient {
+            kind: GradientKind::Linear,
+            angle: 0.0,
+            stops: vec![
+                (0.0, [255, 0, 0, 255]),
+                (0.5, [0, 255, 0, 255]),
+                (1.0, [0, 0, 255, 255]),
+            ],
+        };
+        assert_eq!(g.color_at(0.5), [0, 255, 0, 255]);
+        assert_eq!(g.color_at(0.25), [128, 128, 0, 255]);
+        assert_eq!(Gradient { stops: vec![], ..g }.color_at(0.3), WHITE);
+    }
+}

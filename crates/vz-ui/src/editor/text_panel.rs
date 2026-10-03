@@ -45,6 +45,7 @@ pub fn add_text(ctx: &mut Ctx<'_>, preset: &TextPreset) {
     let text = TextContent {
         text: preset.text.to_owned(),
         style: preset.style.clone(),
+        ..TextContent::default()
     };
     match ctx
         .doc
@@ -149,6 +150,7 @@ fn sample_texture(
     let sample = TextContent {
         text: preset.sample.to_owned(),
         style: preset.style.clone(),
+        ..TextContent::default()
     };
     // about 30 pixels tall letters, whatever the style's own size
     let factor = (30.0 / preset.style.size).clamp(0.1, 1.0);
