@@ -7,10 +7,12 @@
 pub mod engine;
 pub mod mixer;
 pub mod reader;
+pub mod waveform;
 
 pub use engine::AudioEngine;
 pub use mixer::{Mixer, micros_to_samples, samples_to_micros};
 pub use reader::{AudioError, AudioReader};
+pub use waveform::Waveform;
 
 /// Name of this crate, used in diagnostics.
 pub const CRATE: &str = "vz-audio";
@@ -226,5 +228,98 @@ mod tests {
             "after 1 s the clock moved by {played} us"
         );
         assert!(!engine.is_playing());
+    }
+
+    /// RMS of the mixed sound between two times.
+    fn loudness(doc: &Document, from: i64, to: i64) -> f32 {
+        let mut mixer = Mixer::new(RATE);
+        let start = micros_to_samples(from, RATE);
+        let frames = (micros_to_samples(to, RATE) - start) as usize;
+        let mut out = Vec::new();
+        mixer.render(&doc.project, start, frames, &mut out);
+        rms(&out)
+    }
+
+    #[test]
+    fn volume_scales_the_sound() {
+        let path = testutil::standard();
+        let mut doc = doc_with(&path);
+        let id = doc.project.timeline().main_track().clips[0].id;
+        let full = loudness(&doc, 0, US_PER_SEC);
+        doc.update_clip(id, "v", None, |c| c.volume = 0.5.into())
+            .unwrap();
+        let half = loudness(&doc, 0, US_PER_SEC);
+        assert!((half / full - 0.5).abs() < 0.02, "{half} vs {full}");
+        doc.update_clip(id, "v", None, |c| c.volume = 0.0.into())
+            .unwrap();
+        assert_eq!(loudness(&doc, 0, US_PER_SEC), 0.0);
+    }
+
+    #[test]
+    fn fades_ramp_the_sound_in_and_out() {
+        let path = testutil::standard(); // 4 s
+        let mut doc = doc_with(&path);
+        let id = doc.project.timeline().main_track().clips[0].id;
+        let plain_start = loudness(&doc, 0, US_PER_SEC / 4);
+        doc.update_clip(id, "f", None, |c| {
+            c.fade_in = US_PER_SEC;
+            c.fade_out = US_PER_SEC;
+        })
+        .unwrap();
+        // the first quarter second of a one second fade-in is quiet, and the middle is untouched
+        assert!(loudness(&doc, 0, US_PER_SEC / 4) < plain_start * 0.3);
+        let middle = loudness(&doc, US_PER_SEC * 3 / 2, US_PER_SEC * 5 / 2);
+        assert!((middle - plain_start).abs() < plain_start * 0.1);
+        // the last quarter second fades out
+        assert!(
+            loudness(&doc, 4 * US_PER_SEC - US_PER_SEC / 4, 4 * US_PER_SEC) < plain_start * 0.3
+        );
+        // and the very first sample is silent
+        let mut mixer = Mixer::new(RATE);
+        let mut out = Vec::new();
+        mixer.render(&doc.project, 0, 8, &mut out);
+        assert_eq!(out[0], 0.0);
+    }
+
+    #[test]
+    fn a_volume_ramp_between_keyframes_is_followed() {
+        use vz_anim::{Easing, Keyframe};
+        let path = testutil::standard();
+        let mut doc = doc_with(&path);
+        let id = doc.project.timeline().main_track().clips[0].id;
+        doc.update_clip(id, "v", None, |c| {
+            c.volume = vz_anim::Animatable::Keyframed(vec![
+                Keyframe {
+                    time: 0,
+                    value: 1.0,
+                    easing: Easing::Linear,
+                },
+                Keyframe {
+                    time: 2 * US_PER_SEC,
+                    value: 0.0,
+                    easing: Easing::Linear,
+                },
+            ]);
+        })
+        .unwrap();
+        let early = loudness(&doc, 0, US_PER_SEC / 4);
+        let late = loudness(&doc, US_PER_SEC * 7 / 4, 2 * US_PER_SEC);
+        assert!(late < early * 0.25, "{late} vs {early}");
+    }
+
+    #[test]
+    fn a_muted_track_is_silent_and_a_video_overlay_adds_its_sound() {
+        let path = testutil::standard();
+        let mut doc = doc_with(&path);
+        let main = doc.project.timeline().main_track().id;
+        let sound = loudness(&doc, 0, US_PER_SEC);
+        assert!(sound > 0.01);
+        doc.set_track_flags(main, |f| f.muted = true).unwrap();
+        assert_eq!(loudness(&doc, 0, US_PER_SEC), 0.0);
+        doc.set_track_flags(main, |f| f.muted = false).unwrap();
+        let media = doc.project.media[0].id;
+        doc.place_media_new_track(media, 0).unwrap(); // the same sound again on an audio track
+        let doubled = loudness(&doc, 0, US_PER_SEC);
+        assert!(doubled > sound * 1.5, "{doubled} vs {sound}");
     }
 }

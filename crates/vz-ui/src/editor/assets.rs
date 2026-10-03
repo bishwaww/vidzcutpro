@@ -85,6 +85,14 @@ impl Category {
         }
     }
 
+    /// Which roadmap phase builds a sub-menu entry of this tab.
+    pub fn phase_of(self, sub_menu: usize) -> u8 {
+        match (self, sub_menu) {
+            (Self::Text, 2) => 7, // text templates with animation
+            _ => self.phase(),
+        }
+    }
+
     /// Which roadmap phase builds this tab.
     pub fn phase(self) -> u8 {
         match self {
@@ -156,8 +164,14 @@ pub fn show(ui: &mut egui::Ui, ctx: &mut Ctx<'_>) {
             ui.add_space(8.0);
             if ctx.state.category == Category::Media && ctx.state.sub_menu == 0 {
                 media_grid(ui, ctx);
+            } else if ctx.state.category == Category::Text
+                && super::text_panel::handles(ctx.state.sub_menu)
+            {
+                super::text_panel::show(ui, ctx);
+            } else if ctx.state.category == Category::Stickers {
+                super::sticker_panel::show(ui, ctx);
             } else {
-                placeholder(ui, ctx.state.category);
+                placeholder(ui, ctx.state.category, ctx.state.sub_menu);
             }
         });
     });
@@ -513,14 +527,14 @@ fn ghost(egui_ctx: &egui::Context, name: &str) {
 
 /// Put a media file on the timeline at the playhead and select the new clip.
 fn add_to_timeline(ctx: &mut Ctx<'_>, media: MediaId) {
-    match ctx.doc.add_clip_at_time(media, ctx.state.playhead) {
+    match ctx.doc.add_media_auto(media, ctx.state.playhead) {
         Ok(id) => ctx.state.selection = vec![id],
         Err(e) => ctx.state.say(format!("Could not add the clip: {e}")),
     }
 }
 
 /// What the grid shows until the real content exists.
-fn placeholder(ui: &mut egui::Ui, category: Category) {
+fn placeholder(ui: &mut egui::Ui, category: Category, sub_menu: usize) {
     let avail = ui.available_size_before_wrap();
     let (rect, _) =
         ui.allocate_exact_size(vec2(avail.x, (avail.y - 8.0).max(120.0)), Sense::hover());
@@ -543,14 +557,18 @@ fn placeholder(ui: &mut egui::Ui, category: Category) {
     painter.text(
         r.center() - vec2(0.0, 10.0),
         Align2::CENTER_CENTER,
-        category.label(),
+        category
+            .sub_menu()
+            .get(sub_menu)
+            .copied()
+            .unwrap_or(category.label()),
         FontId::proportional(14.0),
         theme::TEXT,
     );
     painter.text(
         r.center() + vec2(0.0, 12.0),
         Align2::CENTER_CENTER,
-        format!("Coming in Phase {}", category.phase()),
+        format!("Coming in Phase {}", category.phase_of(sub_menu)),
         FontId::proportional(12.0),
         theme::MUTED,
     );

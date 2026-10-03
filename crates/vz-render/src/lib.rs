@@ -9,12 +9,14 @@
 pub mod blend;
 pub mod composite;
 
-use composite::Placement;
+use composite::{Image, Placement};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use vz_core::{Background, Clip, Content, MediaKind, Micros, Project};
 use vz_media::{FrameSource, MaxSize, VideoFrame};
+use vz_text::{TextEngine, TextImage};
+use vz_vector::{ShapeCache, ShapeImage};
 
 /// Name of this crate, used in diagnostics.
 pub const CRATE: &str = "vz-render";
@@ -26,6 +28,33 @@ pub struct Renderer {
     sources: HashMap<PathBuf, (MaxSize, FrameSource)>,
     /// Files that could not be opened or decoded, so we do not retry (and log) on every frame.
     broken: HashMap<PathBuf, String>,
+    text: TextEngine,
+    shapes: ShapeCache,
+}
+
+/// What a layer draws.
+enum Source {
+    Frame(Arc<VideoFrame>),
+    Text(Arc<TextImage>),
+    Shape(Arc<ShapeImage>),
+}
+
+impl Source {
+    fn image(&self) -> Image<'_> {
+        match self {
+            Self::Frame(f) => Image::from(f.as_ref()),
+            Self::Text(t) => Image {
+                width: t.width,
+                height: t.height,
+                rgba: &t.rgba,
+            },
+            Self::Shape(s) => Image {
+                width: s.width,
+                height: s.height,
+                rgba: &s.rgba,
+            },
+        }
+    }
 }
 
 /// How much bigger than the canvas a picture is decoded, so a layer scaled up stays sharp.
@@ -64,29 +93,56 @@ impl Renderer {
         let to_output = w as f32 / project.canvas.width.max(1) as f32;
 
         // pictures first, so a blurred background can use the lowest one
-        let mut drawn: Vec<(Arc<VideoFrame>, Placement, &Clip, f32)> = Vec::new();
+        let mut drawn: Vec<(Source, Placement, &Clip, f32)> = Vec::new();
+        let text_unit = vz_text::unit(project.canvas.width, project.canvas.height);
         for layer in project.timeline().layers_at(t) {
             let clip = layer.clip;
             let local = clip.local_time(t);
             let transform = clip.transform.at(local);
             let largest = transform.scale_x.abs().max(transform.scale_y.abs());
-            let Content::Media(media) = &clip.content else {
-                continue;
-            }; // text arrives in step 2c
-            let Some(asset) = project.asset(*media) else {
-                continue;
-            };
-            if asset.kind == MediaKind::Audio {
-                continue;
-            }
             let bucket = decode_bucket(largest);
-            let Some(frame) = self.picture(&asset.path, layer.source_time, (w, h), bucket) else {
-                continue;
+            let (source, display) = match &clip.content {
+                Content::Media(media) => {
+                    let Some(asset) = project.asset(*media) else {
+                        continue;
+                    };
+                    if asset.kind == MediaKind::Audio {
+                        continue;
+                    }
+                    let Some(frame) = self.picture(&asset.path, layer.source_time, (w, h), bucket)
+                    else {
+                        continue;
+                    };
+                    let display = (
+                        frame.width as f32 / bucket as f32,
+                        frame.height as f32 / bucket as f32,
+                    );
+                    (Source::Frame(frame), display)
+                }
+                Content::Text(text) => {
+                    if text.text.trim().is_empty() {
+                        continue;
+                    }
+                    let image = self
+                        .text
+                        .render(text, text_unit * to_output * bucket as f32);
+                    let display = (
+                        image.width as f32 / bucket as f32,
+                        image.height as f32 / bucket as f32,
+                    );
+                    (Source::Text(image), display)
+                }
+                Content::Shape(shape) => {
+                    let image = self
+                        .shapes
+                        .render(shape, text_unit * to_output * bucket as f32);
+                    let display = (
+                        image.width as f32 / bucket as f32,
+                        image.height as f32 / bucket as f32,
+                    );
+                    (Source::Shape(image), display)
+                }
             };
-            let display = (
-                frame.width as f32 / bucket as f32,
-                frame.height as f32 / bucket as f32,
-            );
             let placement = Placement {
                 center: (
                     w as f32 / 2.0 + transform.x * to_output,
@@ -99,7 +155,7 @@ impl Renderer {
                 flip_v: transform.flip_v,
             };
             let opacity = clip.opacity.value_at(local);
-            drawn.push((frame, placement, clip, opacity));
+            drawn.push((source, placement, clip, opacity));
         }
 
         if let Background::Color(c) = project.background {
@@ -108,24 +164,29 @@ impl Renderer {
                     px.copy_from_slice(&[c[0], c[1], c[2], 255]);
                 }
             }
-        } else if let (Background::Blur(amount), Some((frame, ..))) =
-            (project.background, drawn.first())
-        {
+        } else if let (Background::Blur(amount), Some(frame)) = (
+            project.background,
+            drawn.iter().find_map(|(s, ..)| match s {
+                Source::Frame(f) => Some(f),
+                Source::Text(_) | Source::Shape(_) => None,
+            }),
+        ) {
             blurred_cover(&mut canvas, frame, amount);
         }
 
-        for (frame, placement, clip, opacity) in &drawn {
-            if is_plain(placement, clip, *opacity, &canvas, frame) {
-                paste_centered(&mut canvas, frame);
-            } else {
-                composite::draw(
+        for (source, placement, clip, opacity) in &drawn {
+            match source {
+                Source::Frame(frame) if is_plain(placement, clip, *opacity, &canvas, frame) => {
+                    paste_centered(&mut canvas, frame);
+                }
+                _ => composite::draw(
                     &mut canvas,
-                    frame,
+                    source.image(),
                     placement,
                     clip.crop.clamped(),
                     *opacity,
                     clip.blend,
-                );
+                ),
             }
         }
         Arc::new(canvas)

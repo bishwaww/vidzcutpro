@@ -17,6 +17,7 @@ pub enum Tab {
     Video,
     Audio,
     Text,
+    Shape,
     Details,
 }
 
@@ -26,6 +27,7 @@ impl Tab {
             Self::Video => "Video",
             Self::Audio => "Audio",
             Self::Text => "Text",
+            Self::Shape => "Shape",
             Self::Details => "Details",
         }
     }
@@ -35,6 +37,7 @@ impl Tab {
 fn tabs_for(ctx: &Ctx<'_>, clip: &Clip) -> Vec<Tab> {
     match &clip.content {
         Content::Text(_) => vec![Tab::Text, Tab::Video, Tab::Details],
+        Content::Shape(_) => vec![Tab::Shape, Tab::Video, Tab::Details],
         Content::Media(m) => match ctx.doc.project.asset(*m).map(|a| (a.kind, a.has_audio)) {
             Some((MediaKind::Audio, _)) => vec![Tab::Audio, Tab::Details],
             Some((MediaKind::Video, true)) => vec![Tab::Video, Tab::Audio, Tab::Details],
@@ -129,6 +132,9 @@ fn section_title(ui: &mut egui::Ui, title: &str) {
     ui.add_space(2.0);
 }
 
+mod shape;
+mod text;
+
 use super::canvas::merge_key as key;
 
 /// A labelled slider (with a typed number) for one property of a clip.
@@ -179,7 +185,8 @@ fn clip_tabs(ui: &mut egui::Ui, ctx: &mut Ctx<'_>, clip: &Clip) {
             crop_section(ui, ctx, clip);
         }
         Tab::Audio => audio_section(ui, ctx, clip),
-        Tab::Text => text_section(ui, ctx, clip),
+        Tab::Text => text::text_section(ui, ctx, clip),
+        Tab::Shape => shape::shape_section(ui, ctx, clip),
         Tab::Details => clip_details(ui, ctx, clip),
     }
 }
@@ -595,10 +602,6 @@ fn audio_section(ui: &mut egui::Ui, ctx: &mut Ctx<'_>, clip: &Clip) {
     );
 }
 
-fn text_section(ui: &mut egui::Ui, _ctx: &mut Ctx<'_>, _clip: &Clip) {
-    ui.label(RichText::new("Text settings arrive in the next step.").color(theme::MUTED));
-}
-
 fn clip_details(ui: &mut egui::Ui, ctx: &Ctx<'_>, clip: &Clip) {
     let rate = ctx.doc.project.frame_rate;
     let name = match &clip.content {
@@ -608,6 +611,7 @@ fn clip_details(ui: &mut egui::Ui, ctx: &Ctx<'_>, clip: &Clip) {
             .asset(*m)
             .map_or("?".to_string(), |a| a.name.clone()),
         Content::Text(t) => t.text.lines().next().unwrap_or("").to_string(),
+        Content::Shape(s) => s.kind.label().to_string(),
     };
     section_title(ui, "Selected clip");
     let tc = |t: Micros| rate.timecode(t);

@@ -5,6 +5,8 @@ mod canvas;
 mod geometry;
 mod inspector;
 mod player;
+mod sticker_panel;
+mod text_panel;
 mod timeline;
 mod topbar;
 
@@ -48,6 +50,14 @@ pub struct EditorState {
     pub guides: Vec<canvas::Guide>,
     pub show_thirds: bool,
     pub show_safe: bool,
+    /// Font family names for the font list (filled the first time it is opened).
+    pub fonts: Vec<String>,
+    /// Put the cursor in the inspector's text box on the next frame.
+    pub focus_text: bool,
+    /// Clips copied with Ctrl+C or Ctrl+X.
+    pub clipboard: Vec<vz_core::ClipboardItem>,
+    /// Pictures of the text styles on the Text tab.
+    pub preset_tiles: HashMap<String, egui::TextureHandle>,
     pub(crate) drag: Option<TimelineDrag>,
     next_merge_key: u64,
     pub toast: Option<(String, Instant)>,
@@ -76,6 +86,10 @@ impl Default for EditorState {
             guides: Vec::new(),
             show_thirds: false,
             show_safe: false,
+            fonts: Vec::new(),
+            focus_text: false,
+            clipboard: Vec::new(),
+            preset_tiles: HashMap::new(),
             drag: None,
             next_merge_key: 1,
             toast: None,
@@ -125,6 +139,7 @@ pub struct Ctx<'a> {
     pub layout_gen: u32,
     pub images: Images<'a>,
     pub thumbs: &'a HashMap<MediaId, egui::TextureHandle>,
+    pub waveforms: &'a HashMap<MediaId, std::sync::Arc<vz_audio::Waveform>>,
     pub missing: &'a HashSet<MediaId>,
     pub player_texture: Option<&'a egui::TextureHandle>,
     pub actions: Vec<Action>,
@@ -261,6 +276,43 @@ fn handle_keys(egui_ctx: &egui::Context, ctx: &mut Ctx<'_>) {
     }
     if pressed(cmd, Key::B) {
         timeline::split_at_playhead(ctx);
+    }
+    // copy, cut and paste arrive as their own events (not as key presses) when typed on a real keyboard
+    let (copy, cut, paste) = egui_ctx.input(|i| {
+        let has = |f: fn(&egui::Event) -> bool| i.events.iter().any(f);
+        (
+            has(|e| matches!(e, egui::Event::Copy)),
+            has(|e| matches!(e, egui::Event::Cut)),
+            has(|e| matches!(e, egui::Event::Paste(_))),
+        )
+    });
+    if copy || pressed(cmd, Key::C) {
+        timeline::copy_selection(ctx);
+    }
+    if cut || pressed(cmd, Key::X) {
+        timeline::cut_selection(ctx);
+    }
+    if paste || pressed(cmd, Key::V) {
+        timeline::paste_at_playhead(ctx);
+    }
+    if pressed(cmd, Key::D) {
+        timeline::duplicate_selection(ctx);
+    }
+    if pressed(Modifiers::NONE, Key::M) {
+        timeline::toggle_marker(ctx);
+    }
+    // nudge the selected layer on the picture: Alt + arrows move 1 pixel, Alt + Shift + arrows 10 pixels
+    for (key, dx, dy) in [
+        (Key::ArrowLeft, -1.0, 0.0),
+        (Key::ArrowRight, 1.0, 0.0),
+        (Key::ArrowUp, 0.0, -1.0),
+        (Key::ArrowDown, 0.0, 1.0),
+    ] {
+        for (mods, step) in [(Modifiers::ALT | shift, 10.0), (Modifiers::ALT, 1.0)] {
+            if pressed(mods, key) {
+                canvas::nudge(ctx, dx * step, dy * step);
+            }
+        }
     }
     if pressed(Modifiers::NONE, Key::Delete) || pressed(Modifiers::NONE, Key::Backspace) {
         timeline::delete_selection(ctx);

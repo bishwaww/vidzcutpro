@@ -7,3 +7,4 @@ publish = false
 
 [dependencies]
 vz-core = { path = "../vz-core" }
+tiny-skia = "0.11"

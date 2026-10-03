@@ -1,6 +1,6 @@
 //! Timelines, tracks and clips.
 
-use crate::content::{Content, TextContent};
+use crate::content::{Content, ShapeContent, TextContent};
 use crate::ids::{ClipId, GroupId, LinkId, MarkerId, MediaId, TimelineId, TrackId};
 use crate::layer::{BlendMode, Color, Crop, Transform};
 use crate::time::Micros;
@@ -76,6 +76,11 @@ impl Clip {
     /// A clip of text.
     pub fn text_clip(text: TextContent, start: Micros, duration: Micros) -> Self {
         Self::with_content(Content::Text(text), start, 0, duration)
+    }
+
+    /// A clip of a drawn shape.
+    pub fn shape_clip(shape: ShapeContent, start: Micros, duration: Micros) -> Self {
+        Self::with_content(Content::Shape(shape), start, 0, duration)
     }
 
     /// The media file this clip plays, if it is a media clip.

@@ -16,10 +16,11 @@ pub mod timeline;
 
 pub use command::{Command, History, MergeKey, TrackFlags};
 pub use content::{
-    Content, TextAlign, TextBackground, TextContent, TextShadow, TextStroke, TextStyle,
+    Content, ShapeContent, ShapeKind, TextAlign, TextBackground, TextContent, TextShadow,
+    TextStroke, TextStyle,
 };
 pub use document::{
-    DocError, Document, EXTENSION, RecoveryItem, kind_accepts_media, track_accepts,
+    ClipboardItem, DocError, Document, EXTENSION, RecoveryItem, kind_accepts_media, track_accepts,
 };
 pub use edit::EditError;
 pub use ids::{ClipId, GroupId, LinkId, MarkerId, MediaId, TimelineId, TrackId};

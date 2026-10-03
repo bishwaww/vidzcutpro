@@ -266,3 +266,130 @@ fn the_frame_looks_the_same_at_a_smaller_preview_size() {
         );
     }
 }
+
+fn text_scene(text: vz_core::TextContent) -> (Scene, vz_core::ClipId) {
+    let mut s = scene();
+    let track = s.doc.add_track(TrackKind::Text).unwrap();
+    let id = s.doc.add_text(track, 0, 2 * US_PER_SEC, text).unwrap();
+    (s, id)
+}
+
+fn white_text(s: &str) -> vz_core::TextContent {
+    let mut t = vz_core::TextContent::new(s);
+    t.style.size = 200.0;
+    t.style.bold = true;
+    t
+}
+
+/// How many pixels in a render are close to white (the text) on the green main clip.
+fn white_pixels(f: &VideoFrame) -> usize {
+    f.rgba
+        .chunks(4)
+        .filter(|p| p[0] > 200 && p[1] > 200 && p[2] > 200)
+        .count()
+}
+
+#[test]
+fn text_is_drawn_over_the_video() {
+    let (s, _) = text_scene(white_text("Hello"));
+    let f = Renderer::new().render(&s.doc.project, US_PER_SEC, SIZE);
+    assert!(white_pixels(&f) > 300, "{}", white_pixels(&f));
+    assert!(
+        near(pixel(&f, 3, 3), [0, 200, 0], 12),
+        "the video is still there"
+    );
+}
+
+#[test]
+fn text_is_only_there_while_its_clip_is() {
+    let (s, _) = text_scene(white_text("Hello"));
+    let f = Renderer::new().render(&s.doc.project, 5 * US_PER_SEC / 2, SIZE);
+    assert_eq!(white_pixels(&f), 0);
+}
+
+#[test]
+fn sinhala_text_is_drawn() {
+    let (s, _) = text_scene(white_text("ශ්‍රී ලංකාව"));
+    let f = Renderer::new().render(&s.doc.project, US_PER_SEC, SIZE);
+    assert!(white_pixels(&f) > 300, "{}", white_pixels(&f));
+}
+
+#[test]
+fn text_can_be_moved_scaled_and_faded_like_any_layer() {
+    let (mut s, id) = text_scene(white_text("Hello"));
+    let mut r = Renderer::new();
+    let centre = |f: &VideoFrame| {
+        let (mut sx, mut sy, mut n) = (0.0, 0.0, 0.0);
+        for y in 0..f.height {
+            for x in 0..f.width {
+                let p = pixel(f, x, y);
+                if p[0] > 200 && p[1] > 200 && p[2] > 200 {
+                    sx += x as f32;
+                    sy += y as f32;
+                    n += 1.0;
+                }
+            }
+        }
+        (sx / n, sy / n, n)
+    };
+    let (cx0, cy0, n0) = centre(&r.render(&s.doc.project, US_PER_SEC, SIZE));
+    assert!(
+        (cx0 - 160.0).abs() < 8.0 && (cy0 - 90.0).abs() < 12.0,
+        "{cx0} {cy0}"
+    );
+
+    s.doc
+        .update_clip(id, "m", None, |c| {
+            c.transform.x = 600.0.into(); // 100 pixels right in this render
+            c.transform.y = 300.0.into(); // 50 pixels down
+        })
+        .unwrap();
+    let (cx1, cy1, _) = centre(&r.render(&s.doc.project, US_PER_SEC, SIZE));
+    assert!((cx1 - cx0 - 100.0).abs() < 4.0 && (cy1 - cy0 - 50.0).abs() < 4.0);
+
+    s.doc
+        .update_clip(id, "s", None, |c| {
+            c.transform.x = 0.0.into();
+            c.transform.y = 0.0.into();
+            c.transform.scale_x = 0.5.into();
+            c.transform.scale_y = 0.5.into();
+        })
+        .unwrap();
+    let (_, _, n_small) = centre(&r.render(&s.doc.project, US_PER_SEC, SIZE));
+    assert!(n_small < n0 * 0.4, "{n_small} vs {n0}");
+
+    s.doc
+        .update_clip(id, "o", None, |c| {
+            c.transform.scale_x = 1.0.into();
+            c.transform.scale_y = 1.0.into();
+            c.opacity = 0.0.into();
+        })
+        .unwrap();
+    assert_eq!(white_pixels(&r.render(&s.doc.project, US_PER_SEC, SIZE)), 0);
+}
+
+#[test]
+fn text_stays_sharp_when_it_is_scaled_up() {
+    let (mut s, id) = text_scene(white_text("Hi"));
+    s.doc
+        .update_clip(id, "s", None, |c| {
+            c.transform.scale_x = 3.0.into();
+            c.transform.scale_y = 3.0.into();
+        })
+        .unwrap();
+    let f = Renderer::new().render(&s.doc.project, US_PER_SEC, SIZE);
+    // sharp text has plenty of fully white pixels with hard edges
+    let solid = f
+        .rgba
+        .chunks(4)
+        .filter(|p| p[0] == 255 && p[1] == 255 && p[2] == 255)
+        .count();
+    assert!(solid > 1000, "{solid}");
+}
+
+#[test]
+fn empty_text_draws_nothing() {
+    let (s, _) = text_scene(white_text("   "));
+    let f = Renderer::new().render(&s.doc.project, US_PER_SEC, SIZE);
+    assert_eq!(white_pixels(&f), 0);
+}

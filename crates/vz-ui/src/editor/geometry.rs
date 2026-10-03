@@ -49,21 +49,45 @@ impl Placed {
     }
 }
 
-/// The size a picture clip has at scale 1: its media fitted into the canvas.
-pub fn base_size(project: &Project, clip: &Clip) -> Option<Vec2> {
-    let Content::Media(media) = &clip.content else {
-        return None;
-    };
-    let asset = project.asset(*media)?;
-    if !asset.has_picture() || asset.width == 0 || asset.height == 0 {
-        return None;
-    }
-    let (cw, ch) = (project.canvas.width as f32, project.canvas.height as f32);
-    let k = (cw / asset.width as f32).min(ch / asset.height as f32);
-    Some(vec2(asset.width as f32 * k, asset.height as f32 * k))
+thread_local! {
+    /// The text engine of the interface thread (measuring text, listing fonts). The preview thread has its own.
+    static TEXT: std::cell::RefCell<vz_text::TextEngine> = std::cell::RefCell::new(vz_text::TextEngine::new());
 }
 
-/// Where `clip` is on the canvas at timeline time `t`. `None` for clips with no picture (sound; text until its size is known).
+/// Use the interface thread's text engine.
+pub fn with_text<R>(f: impl FnOnce(&mut vz_text::TextEngine) -> R) -> R {
+    TEXT.with(|t| f(&mut t.borrow_mut()))
+}
+
+/// The size a clip has at scale 1: a picture fitted into the canvas, or text at its own size.
+pub fn base_size(project: &Project, clip: &Clip) -> Option<Vec2> {
+    let (cw, ch) = (project.canvas.width as f32, project.canvas.height as f32);
+    match &clip.content {
+        Content::Media(media) => {
+            let asset = project.asset(*media)?;
+            if !asset.has_picture() || asset.width == 0 || asset.height == 0 {
+                return None;
+            }
+            let k = (cw / asset.width as f32).min(ch / asset.height as f32);
+            Some(vec2(asset.width as f32 * k, asset.height as f32 * k))
+        }
+        Content::Text(text) => {
+            if text.text.trim().is_empty() {
+                return None;
+            }
+            let unit = vz_text::unit(project.canvas.width, project.canvas.height);
+            let (w, h) = with_text(|e| e.measure(text, unit));
+            Some(vec2(w, h))
+        }
+        Content::Shape(shape) => {
+            let unit = vz_text::unit(project.canvas.width, project.canvas.height);
+            let (w, h) = vz_vector::measure(shape, unit);
+            Some(vec2(w, h))
+        }
+    }
+}
+
+/// Where `clip` is on the canvas at timeline time `t`. `None` for clips with no picture (sound, empty text).
 pub fn placed(project: &Project, clip: &Clip, t: Micros) -> Option<Placed> {
     let size = base_size(project, clip)?;
     let tr = clip.transform.at(clip.local_time(t));

@@ -8,6 +8,7 @@ use crate::home::{self, RecentItem};
 use crate::preview::Preview;
 use crate::settings::UiSettings;
 use crate::theme;
+use crate::waveforms::Waveforms;
 use directories::ProjectDirs;
 use eframe::egui;
 use std::collections::{HashMap, HashSet};
@@ -60,6 +61,7 @@ pub struct VidzApp {
     media: MediaWorker,
     preview: Preview,
     thumbs: HashMap<MediaId, egui::TextureHandle>,
+    waveforms: Waveforms,
     missing: HashSet<MediaId>,
     player_texture: Option<egui::TextureHandle>,
     /// What the preview was last asked to draw: (document, revision, time, size).
@@ -131,6 +133,7 @@ impl VidzApp {
             settings_dirty: false,
             dev,
             media: MediaWorker::start(wake.clone()),
+            waveforms: Waveforms::new(wake.clone()),
             preview: Preview::start(wake),
             thumbs: HashMap::new(),
             missing: HashSet::new(),
@@ -175,6 +178,7 @@ impl VidzApp {
         self.doc_serial += 1;
         self.editor = EditorState::default();
         self.thumbs.clear();
+        self.waveforms.clear();
         self.player_texture = None;
         self.last_request = None;
         self.play_origin = None;
@@ -298,7 +302,7 @@ impl VidzApp {
                         Ok(id) => {
                             if !self.dev.import.is_empty() {
                                 // developer switch: lay imported files out on the timeline
-                                let _ = self.doc.add_clip(id, usize::MAX);
+                                let _ = self.doc.add_media_auto(id, 0);
                                 if let Some(secs) = self.dev.playhead_secs {
                                     self.editor.playhead = (secs * 1_000_000.0) as Micros;
                                 }
@@ -761,6 +765,7 @@ impl eframe::App for VidzApp {
             }
             Screen::Editor => {
                 self.advance_playback(&ctx);
+                self.waveforms.update(&self.doc.project);
                 let mut ed = editor::Ctx {
                     doc: &mut self.doc,
                     state: &mut self.editor,
@@ -768,6 +773,7 @@ impl eframe::App for VidzApp {
                     layout_gen: self.layout_gen,
                     images: editor::Images { mark: &mark },
                     thumbs: &self.thumbs,
+                    waveforms: self.waveforms.map(),
                     missing: &self.missing,
                     player_texture: self.player_texture.as_ref(),
                     actions: Vec::new(),

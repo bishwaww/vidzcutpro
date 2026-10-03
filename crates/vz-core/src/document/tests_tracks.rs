@@ -544,3 +544,206 @@ fn track_acceptance_rules() {
         assert_eq!(track_accepts(&s.doc.project, TrackKind::Audio, clip), audio);
     }
 }
+
+#[test]
+fn text_is_added_to_the_first_text_track_with_room_or_a_new_one() {
+    let mut doc = Document::new(Project::new("t"));
+    let (track, first) = doc
+        .add_text_auto(0, 3 * US_PER_SEC, TextContent::new("One"))
+        .unwrap();
+    assert_eq!(
+        doc.project.timeline().track(track).unwrap().kind,
+        TrackKind::Text
+    );
+    // at the same time the first track is busy, so a second text track appears
+    let (second_track, second) = doc
+        .add_text_auto(US_PER_SEC, 3 * US_PER_SEC, TextContent::new("Two"))
+        .unwrap();
+    assert_ne!(track, second_track);
+    // later, after the first text ends, the first track is reused
+    let (third_track, _) = doc
+        .add_text_auto(4 * US_PER_SEC, US_PER_SEC, TextContent::new("Three"))
+        .unwrap();
+    assert_eq!(third_track, track);
+    assert!(doc.project.timeline().clip(first).is_some());
+    assert!(doc.project.timeline().clip(second).is_some());
+    // adding a track and its text is one undo step
+    assert!(doc.undo());
+    assert!(doc.undo());
+    assert!(doc.project.timeline().track(second_track).is_none());
+}
+
+#[test]
+fn locked_text_tracks_are_skipped() {
+    let mut doc = Document::new(Project::new("t"));
+    let (track, _) = doc
+        .add_text_auto(0, US_PER_SEC, TextContent::new("One"))
+        .unwrap();
+    doc.set_track_flags(track, |f| f.locked = true).unwrap();
+    let (other, _) = doc
+        .add_text_auto(5 * US_PER_SEC, US_PER_SEC, TextContent::new("Two"))
+        .unwrap();
+    assert_ne!(other, track);
+}
+
+#[test]
+fn sound_added_to_the_timeline_goes_on_audio_tracks() {
+    let mut doc = Document::new(Project::new("t"));
+    let a = doc.import_media(asset("a", MediaKind::Audio, 4)).unwrap();
+    let b = doc.import_media(asset("b", MediaKind::Audio, 4)).unwrap();
+    let first = doc.add_media_auto(a, 0).unwrap();
+    let track_of_first = doc.project.timeline().track_of(first).unwrap().id;
+    assert_eq!(
+        doc.project.timeline().track_of(first).unwrap().kind,
+        TrackKind::Audio
+    );
+    // a second sound at the same time needs another track; one after the first fits on the same track
+    let second = doc.add_media_auto(b, US_PER_SEC).unwrap();
+    assert_ne!(
+        doc.project.timeline().track_of(second).unwrap().id,
+        track_of_first
+    );
+    let third = doc.add_media_auto(b, 6 * US_PER_SEC).unwrap();
+    assert_eq!(
+        doc.project.timeline().track_of(third).unwrap().id,
+        track_of_first
+    );
+}
+
+#[test]
+fn shapes_go_on_overlay_tracks_only() {
+    use crate::content::{ShapeContent, ShapeKind};
+    let mut doc = Document::new(Project::new("t"));
+    let (track, first) = doc
+        .add_shape_auto(0, 3 * US_PER_SEC, ShapeContent::new(ShapeKind::Star))
+        .unwrap();
+    assert_eq!(
+        doc.project.timeline().track(track).unwrap().kind,
+        TrackKind::Overlay
+    );
+    // busy at the same time: a second overlay track
+    let (other, _) = doc
+        .add_shape_auto(
+            US_PER_SEC,
+            3 * US_PER_SEC,
+            ShapeContent::new(ShapeKind::Heart),
+        )
+        .unwrap();
+    assert_ne!(track, other);
+    assert!(doc.project.timeline().clip(first).is_some());
+    // a shape cannot be dropped on the text or audio tracks
+    let text_track = doc.add_track(TrackKind::Text).unwrap();
+    let clip = doc.project.timeline().clip(first).unwrap().clone();
+    assert!(!track_accepts(&doc.project, TrackKind::Text, &clip));
+    assert!(!track_accepts(&doc.project, TrackKind::Audio, &clip));
+    assert!(track_accepts(&doc.project, TrackKind::Overlay, &clip));
+    let _ = text_track;
+}
+
+fn doc_with_text_and_main() -> (Document, ClipId, ClipId) {
+    let mut doc = Document::new(Project::new("t"));
+    let video = doc.import_media(asset("v", MediaKind::Video, 10)).unwrap();
+    let main_clip = doc.add_clip(video, 0).unwrap();
+    let (_, text) = doc
+        .add_text_auto(2 * US_PER_SEC, 3 * US_PER_SEC, TextContent::new("Hi"))
+        .unwrap();
+    (doc, main_clip, text)
+}
+
+#[test]
+fn a_pasted_text_lands_at_the_playhead_on_its_own_track_as_a_new_clip() {
+    let (mut doc, _, text) = doc_with_text_and_main();
+    let track = doc.project.timeline().track_of(text).unwrap().id;
+    let items = doc.copy_clips(&[text]);
+    let created = doc.paste_clips(&items, 6 * US_PER_SEC).unwrap();
+    assert_eq!(created.len(), 1);
+    assert_ne!(created[0], text);
+    let pasted = doc.project.timeline().clip(created[0]).unwrap();
+    assert_eq!(pasted.start, 6 * US_PER_SEC);
+    assert_eq!(
+        doc.project.timeline().track_of(created[0]).unwrap().id,
+        track
+    );
+    // one undo removes the paste and nothing else
+    assert!(doc.undo());
+    assert!(doc.project.timeline().clip(created[0]).is_none());
+    assert!(doc.project.timeline().clip(text).is_some());
+}
+
+#[test]
+fn pasting_over_something_moves_the_copy_to_the_next_free_spot() {
+    let (mut doc, _, text) = doc_with_text_and_main();
+    let items = doc.copy_clips(&[text]);
+    let created = doc.paste_clips(&items, 3 * US_PER_SEC).unwrap();
+    let pasted = doc.project.timeline().clip(created[0]).unwrap();
+    assert_eq!(
+        pasted.start,
+        5 * US_PER_SEC,
+        "right after the original, which ends at 5 s"
+    );
+}
+
+#[test]
+fn main_track_clips_are_pasted_in_order_and_the_track_stays_packed() {
+    let (mut doc, main_clip, _) = doc_with_text_and_main();
+    let items = doc.copy_clips(&[main_clip]);
+    let created = doc.paste_clips(&items, 10 * US_PER_SEC).unwrap();
+    let main = doc.project.timeline().main_track();
+    assert_eq!(main.clips.len(), 2);
+    assert_eq!(main.clips[1].id, created[0]);
+    assert_eq!(main.clips[1].start, main.clips[0].end());
+}
+
+#[test]
+fn duplicate_puts_the_copy_right_after_the_original() {
+    let (mut doc, _, text) = doc_with_text_and_main();
+    let created = doc.duplicate_clips(&[text]).unwrap();
+    let copy = doc.project.timeline().clip(created[0]).unwrap();
+    assert_eq!(copy.start, 5 * US_PER_SEC);
+    assert_eq!(copy.duration, 3 * US_PER_SEC);
+}
+
+#[test]
+fn copies_of_linked_clips_are_linked_to_each_other_not_to_the_originals() {
+    use crate::ids::LinkId;
+    let (mut doc, main_clip, text) = doc_with_text_and_main();
+    let link = LinkId::new();
+    for id in [main_clip, text] {
+        doc.update_clip(id, "link", None, |c| c.link = Some(link))
+            .unwrap();
+    }
+    let items = doc.copy_clips(&[main_clip, text]);
+    let created = doc.paste_clips(&items, 12 * US_PER_SEC).unwrap();
+    let links: Vec<_> = created
+        .iter()
+        .map(|id| doc.project.timeline().clip(*id).unwrap().link.unwrap())
+        .collect();
+    assert_eq!(links[0], links[1]);
+    assert_ne!(links[0], link);
+}
+
+#[test]
+fn paste_into_a_locked_track_goes_to_another_track_of_the_same_kind() {
+    let (mut doc, _, text) = doc_with_text_and_main();
+    let items = doc.copy_clips(&[text]);
+    let track = doc.project.timeline().track_of(text).unwrap().id;
+    doc.set_track_flags(track, |f| f.locked = true).unwrap();
+    let created = doc.paste_clips(&items, 8 * US_PER_SEC).unwrap();
+    assert_ne!(
+        doc.project.timeline().track_of(created[0]).unwrap().id,
+        track
+    );
+}
+
+#[test]
+fn a_marker_is_added_then_removed_by_the_same_key_and_both_can_be_undone() {
+    let mut doc = Document::new(Project::new("t"));
+    assert!(doc.toggle_marker(2 * US_PER_SEC).unwrap());
+    assert!(doc.toggle_marker(5 * US_PER_SEC).unwrap());
+    assert_eq!(doc.project.timeline().markers.len(), 2);
+    assert!(!doc.toggle_marker(2 * US_PER_SEC).unwrap());
+    assert_eq!(doc.project.timeline().markers.len(), 1);
+    assert!(doc.undo());
+    assert_eq!(doc.project.timeline().markers.len(), 2);
+    assert!(doc.project.timeline().markers[0].time < doc.project.timeline().markers[1].time);
+}

@@ -22,15 +22,34 @@ pub struct Placement {
     pub flip_v: bool,
 }
 
+/// Pixels to draw: straight RGBA, `width` x `height`.
+#[derive(Clone, Copy)]
+pub struct Image<'a> {
+    pub width: u32,
+    pub height: u32,
+    pub rgba: &'a [u8],
+}
+
+impl<'a> From<&'a VideoFrame> for Image<'a> {
+    fn from(f: &'a VideoFrame) -> Self {
+        Self {
+            width: f.width,
+            height: f.height,
+            rgba: &f.rgba,
+        }
+    }
+}
+
 /// Draw `src` onto `canvas`. The canvas must be opaque (every pixel's alpha 255), which it always is here.
-pub fn draw(
+pub fn draw<'a>(
     canvas: &mut VideoFrame,
-    src: &VideoFrame,
+    src: impl Into<Image<'a>>,
     p: &Placement,
     crop: Crop,
     opacity: f32,
     mode: BlendMode,
 ) {
+    let src: Image = src.into();
     let (cw, ch) = (canvas.width as usize, canvas.height as usize);
     let (sw, sh) = (src.width as usize, src.height as usize);
     let opacity = opacity.clamp(0.0, 1.0);
@@ -85,7 +104,7 @@ pub fn draw(
     let (src_per_px_x, src_per_px_y) = (to_u.abs(), to_v.abs());
     let (left, right) = (crop.left * sw as f32, (1.0 - crop.right) * sw as f32);
     let (top, bottom) = (crop.top * sh as f32, (1.0 - crop.bottom) * sh as f32);
-    let src_data = &src.rgba;
+    let src_data = src.rgba;
     let (sw_max, sh_max) = ((sw - 1) as f32, (sh - 1) as f32);
 
     let rows = &mut canvas.rgba[y0 * cw * 4..y1 * cw * 4];

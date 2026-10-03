@@ -8,6 +8,7 @@ mod home;
 mod preview;
 mod settings;
 mod theme;
+mod waveforms;
 
 /// Open the vidzcut window and run until it is closed.
 pub fn run() -> eframe::Result {

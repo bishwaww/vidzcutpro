@@ -3,7 +3,7 @@
 //! This is what the screen holds. All edits go through the methods here, so each one is a [`Command`].
 
 use crate::command::{Command, History, MergeKey, TrackFlags};
-use crate::content::{Content, TextContent};
+use crate::content::{Content, ShapeContent, TextContent};
 use crate::edit::{self, EditError};
 use crate::ids::{ClipId, MediaId, TrackId};
 use crate::media::{MediaAsset, MediaKind};
@@ -315,6 +315,34 @@ impl Document {
         )
     }
 
+    /// Put a marker at `t`, or take away the one that is already there (within a frame). One undo step.
+    /// Returns true if a marker was added.
+    pub fn toggle_marker(&mut self, t: Micros) -> Result<bool, DocError> {
+        let rate = self.project.frame_rate;
+        let t = rate.snap(t.max(0));
+        let before = self.project.timeline().markers.clone();
+        let mut after = before.clone();
+        let near = rate.frame_start(1);
+        let added = match after.iter().position(|m| (m.time - t).abs() < near) {
+            Some(i) => {
+                after.remove(i);
+                false
+            }
+            None => {
+                after.push(crate::timeline::Marker {
+                    id: crate::ids::MarkerId::new(),
+                    time: t,
+                    color: [252, 198, 16, 255],
+                    note: String::new(),
+                });
+                after.sort_by_key(|m| m.time);
+                true
+            }
+        };
+        self.run(Command::SetMarkers { before, after }, None)?;
+        Ok(added)
+    }
+
     // ---- editing clips ---------------------------------------------------------------------------------------------
 
     /// Which track holds a clip.
@@ -434,6 +462,81 @@ impl Document {
         self.add_clip(media, index)
     }
 
+    /// Add a shape at `start` on the first overlay track with room there (and not locked), or on a new overlay
+    /// track. One undo step.
+    pub fn add_shape_auto(
+        &mut self,
+        start: Micros,
+        duration: Micros,
+        shape: ShapeContent,
+    ) -> Result<(TrackId, ClipId), DocError> {
+        let rate = self.project.frame_rate;
+        let start = rate.snap(start.max(0));
+        let duration = rate.snap(duration).max(rate.frame_start(1));
+        let tl = self.project.timeline();
+        let room = tl.tracks.iter().find(|t| {
+            t.kind == TrackKind::Overlay
+                && !t.locked
+                && !edit::free::overlaps(&t.clips, start, start + duration, None)
+        });
+        if let Some(track) = room.map(|t| t.id) {
+            let mut clip = Clip::shape_clip(shape, 0, duration);
+            clip.start = start;
+            let id = self.place_free(track, clip, start)?;
+            return Ok((track, id));
+        }
+        let mut clip = Clip::shape_clip(shape, 0, duration);
+        clip.start = start;
+        let track = Track::new(TrackKind::Overlay, tl.next_track_name(TrackKind::Overlay));
+        let (track_id, clip_id) = (track.id, clip.id);
+        let commands = vec![
+            Command::AddTrack {
+                track: Box::new(track),
+                index: tl.tracks.len(),
+            },
+            Command::EditTrack {
+                track: track_id,
+                before: Vec::new(),
+                after: vec![clip],
+                label: "Add shape",
+            },
+        ];
+        self.run(
+            Command::Batch {
+                label: "Add shape",
+                commands,
+            },
+            None,
+        )?;
+        Ok((track_id, clip_id))
+    }
+
+    /// What "add to timeline" does for a media file: pictures and videos join the main track at the cut nearest to
+    /// `t`; sound goes on the first audio track with room at `t` (or on a new audio track).
+    pub fn add_media_auto(&mut self, media: MediaId, t: Micros) -> Result<ClipId, DocError> {
+        let asset = self
+            .project
+            .asset(media)
+            .ok_or(EditError::MediaNotFound(media))?;
+        if asset.kind != MediaKind::Audio {
+            return self.add_clip_at_time(media, t);
+        }
+        let rate = self.project.frame_rate;
+        let start = rate.snap(t.max(0));
+        let end = start + asset.default_clip_duration();
+        let room = self.project.timeline().tracks.iter().find(|tr| {
+            tr.kind == TrackKind::Audio
+                && !tr.locked
+                && !edit::free::overlaps(&tr.clips, start, end, None)
+        });
+        match room.map(|tr| tr.id) {
+            Some(track) => self.place_media(track, media, start),
+            None => self
+                .place_media_new_track(media, start)
+                .map(|(_, clip)| clip),
+        }
+    }
+
     /// Put a media file on a track at about `start` (moved later if something is in the way).
     /// Pictures and videos go on the main or an overlay track; sound files on an audio track.
     pub fn place_media(
@@ -511,6 +614,57 @@ impl Document {
         self.run(
             Command::Batch {
                 label: "Add clip",
+                commands,
+            },
+            None,
+        )?;
+        Ok((track_id, clip_id))
+    }
+
+    /// Add text at `start` on the first text track that has room there (and is not locked); if there is none,
+    /// on a new text track. One undo step.
+    pub fn add_text_auto(
+        &mut self,
+        start: Micros,
+        duration: Micros,
+        text: TextContent,
+    ) -> Result<(TrackId, ClipId), DocError> {
+        let rate = self.project.frame_rate;
+        let start = rate.snap(start.max(0));
+        let duration = rate.snap(duration).max(rate.frame_start(1));
+        let tl = self.project.timeline();
+        let room = tl.tracks.iter().find(|t| {
+            t.kind == TrackKind::Text
+                && !t.locked
+                && !edit::free::overlaps(&t.clips, start, start + duration, None)
+        });
+        if let Some(track) = room {
+            let track = track.id;
+            return self
+                .add_text(track, start, duration, text)
+                .map(|id| (track, id));
+        }
+        let clip = Clip::text_clip(text, 0, duration);
+        let mut clip = clip;
+        clip.start = start;
+        let mut track = Track::new(TrackKind::Text, tl.next_track_name(TrackKind::Text));
+        let (track_id, clip_id) = (track.id, clip.id);
+        track.clips.clear();
+        let commands = vec![
+            Command::AddTrack {
+                track: Box::new(track),
+                index: tl.tracks.len(),
+            },
+            Command::EditTrack {
+                track: track_id,
+                before: Vec::new(),
+                after: vec![clip],
+                label: "Add text",
+            },
+        ];
+        self.run(
+            Command::Batch {
+                label: "Add text",
                 commands,
             },
             None,
@@ -1033,6 +1187,7 @@ pub fn kind_accepts_media(track: TrackKind, media: MediaKind) -> bool {
 fn kind_accepts_content(track: TrackKind, content: &Content, media: Option<MediaKind>) -> bool {
     match content {
         Content::Text(_) => matches!(track, TrackKind::Text | TrackKind::Overlay),
+        Content::Shape(_) => track == TrackKind::Overlay,
         Content::Media(_) => media.is_some_and(|m| kind_accepts_media(track, m)),
     }
 }
@@ -1145,6 +1300,8 @@ impl Document {
     }
 }
 
+mod clipboard;
+pub use clipboard::ClipboardItem;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

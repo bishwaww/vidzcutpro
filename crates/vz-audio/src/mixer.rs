@@ -4,7 +4,7 @@
 use crate::reader::AudioReader;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
-use vz_core::{MediaKind, Micros, Project};
+use vz_core::{Clip, MediaKind, Micros, Project};
 
 /// Microseconds to a sample number at `rate` (rounded to the nearest sample).
 pub fn micros_to_samples(t: Micros, rate: u32) -> i64 {
@@ -94,6 +94,7 @@ impl Mixer {
                     self.broken.insert(asset.path.clone());
                     continue;
                 }
+                apply_gain(clip, self.rate, from - clip_start, &mut self.scratch);
                 let dst = &mut out[((from - start_sample) * 2) as usize..][..n * 2];
                 for (d, s) in dst.iter_mut().zip(&self.scratch) {
                     *d += s;
@@ -103,6 +104,36 @@ impl Mixer {
         // keep the sum from going past full scale (a proper limiter arrives with the Phase 6 mixer)
         for v in out.iter_mut() {
             *v = v.clamp(-1.0, 1.0);
+        }
+    }
+}
+
+/// Apply the clip's volume and fades to `samples` (interleaved stereo) that start `first` samples into the clip.
+fn apply_gain(clip: &Clip, rate: u32, first: i64, samples: &mut [f32]) {
+    let length = micros_to_samples(clip.duration, rate);
+    let fade_in = micros_to_samples(clip.fade_in.clamp(0, clip.duration), rate);
+    let fade_out = micros_to_samples(clip.fade_out.clamp(0, clip.duration), rate);
+    let animated = clip.volume.is_animated();
+    let mut volume = clip
+        .volume
+        .value_at(samples_to_micros(first, rate))
+        .max(0.0);
+    for (i, frame) in samples.as_chunks_mut::<2>().0.iter_mut().enumerate() {
+        let at = first + i as i64;
+        if animated && i % 256 == 0 {
+            volume = clip.volume.value_at(samples_to_micros(at, rate)).max(0.0);
+        }
+        let mut gain = volume;
+        if fade_in > 0 && at < fade_in {
+            gain *= at as f32 / fade_in as f32;
+        }
+        let left = length - at;
+        if fade_out > 0 && left < fade_out {
+            gain *= left.max(0) as f32 / fade_out as f32;
+        }
+        if gain != 1.0 {
+            frame[0] *= gain;
+            frame[1] *= gain;
         }
     }
 }

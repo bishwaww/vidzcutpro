@@ -9,6 +9,8 @@ publish = false
 vz-core = { path = "../vz-core" }
 vz-anim = { path = "../vz-anim" }
 vz-media = { path = "../vz-media" }
+vz-text = { path = "../vz-text" }
+vz-vector = { path = "../vz-vector" }
 tracing.workspace = true
 rayon = "1"
 image = { workspace = true }

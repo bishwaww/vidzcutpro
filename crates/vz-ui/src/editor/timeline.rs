@@ -147,7 +147,14 @@ fn toolbar(ui: &mut egui::Ui, ctx: &mut Ctx<'_>) {
         ) {
             delete_selection(ctx);
         }
-        tool(ui, "Marker", false, COMING_SOON);
+        if tool(
+            ui,
+            "Marker",
+            true,
+            "Add or remove a marker at the playhead (M)",
+        ) {
+            toggle_marker(ctx);
+        }
         tool(ui, "Freeze", false, COMING_SOON);
         ui.menu_button(RichText::new("+ Track").small(), |ui| {
             for (kind, label) in [
@@ -243,6 +250,59 @@ pub fn trim_to_playhead(ctx: &mut Ctx<'_>, side: Side) {
         Err(_) => ctx
             .state
             .say("Put the playhead inside a clip (not at its very edge) and select it."),
+    }
+}
+
+/// Remember the selected clips for pasting.
+pub fn copy_selection(ctx: &mut Ctx<'_>) {
+    let items = ctx.doc.copy_clips(&ctx.state.selection);
+    if items.is_empty() {
+        return;
+    }
+    let n = items.len();
+    ctx.state.clipboard = items;
+    ctx.state.say(if n == 1 {
+        "Copied 1 clip".to_string()
+    } else {
+        format!("Copied {n} clips")
+    });
+}
+
+pub fn cut_selection(ctx: &mut Ctx<'_>) {
+    copy_selection(ctx);
+    if !ctx.state.clipboard.is_empty() {
+        delete_selection(ctx);
+    }
+}
+
+/// Paste the remembered clips so the first one starts at the playhead.
+pub fn paste_at_playhead(ctx: &mut Ctx<'_>) {
+    if ctx.state.clipboard.is_empty() {
+        return;
+    }
+    let items = ctx.state.clipboard.clone();
+    match ctx.doc.paste_clips(&items, ctx.state.playhead) {
+        Ok(ids) => ctx.state.selection = ids,
+        Err(e) => ctx.state.say(format!("Could not paste: {e}")),
+    }
+}
+
+/// Copy the selected clips and put the copies right after them.
+pub fn duplicate_selection(ctx: &mut Ctx<'_>) {
+    if ctx.state.selection.is_empty() {
+        return;
+    }
+    let ids = ctx.state.selection.clone();
+    match ctx.doc.duplicate_clips(&ids) {
+        Ok(new) => ctx.state.selection = new,
+        Err(e) => ctx.state.say(format!("Could not duplicate: {e}")),
+    }
+}
+
+/// Add a marker at the playhead, or remove the one there.
+pub fn toggle_marker(ctx: &mut Ctx<'_>) {
+    if let Err(e) = ctx.doc.toggle_marker(ctx.state.playhead) {
+        ctx.state.say(format!("Could not change the marker: {e}"));
     }
 }
 

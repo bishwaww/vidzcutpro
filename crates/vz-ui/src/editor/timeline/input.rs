@@ -207,6 +207,7 @@ fn start_drag(ui: &egui::Ui, ctx: &mut Ctx<'_>, frame: &Frame, origin: Pos2) {
 /// The nearest time worth sticking to (the start, the playhead, another clip's edge), if one is close enough.
 fn snap_candidates(ctx: &Ctx<'_>, exclude: &[ClipId]) -> Vec<Micros> {
     let mut points = vec![0, ctx.state.playhead];
+    points.extend(ctx.doc.project.timeline().markers.iter().map(|m| m.time));
     for track in &ctx.doc.project.timeline().tracks {
         for c in track.clips.iter().filter(|c| !exclude.contains(&c.id)) {
             points.push(c.start);

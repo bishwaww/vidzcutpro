@@ -192,6 +192,22 @@ pub fn show(ui: &mut egui::Ui, ctx: &mut Ctx<'_>, rect: Rect) {
         ctx.state.guides.clear();
     }
 
+    // double-clicking text puts the cursor in its text box
+    if resp.double_clicked()
+        && let Some(pos) = resp.interact_pointer_pos()
+        && let Some(id) = pick(&ctx.doc.project, ctx.state.playhead, view.canvas(pos))
+        && ctx
+            .doc
+            .project
+            .timeline()
+            .clip(id)
+            .is_some_and(vz_core::Clip::is_text)
+    {
+        ctx.state.selection = vec![id];
+        ctx.state.inspector_tab = super::inspector::Tab::Text;
+        ctx.state.focus_text = true;
+    }
+
     // a plain click selects (or clears)
     if resp.clicked()
         && let Some(pos) = resp.interact_pointer_pos()
@@ -209,6 +225,28 @@ pub fn show(ui: &mut egui::Ui, ctx: &mut Ctx<'_>, rect: Rect) {
             None if !toggle => ctx.state.selection.clear(),
             None => {}
         }
+    }
+}
+
+/// Move the selected layers by whole pixels (arrow keys).
+pub fn nudge(ctx: &mut Ctx<'_>, dx: f32, dy: f32) {
+    for id in ctx.state.selection.clone() {
+        let locked = ctx
+            .doc
+            .project
+            .timeline()
+            .track_of(id)
+            .is_some_and(|t| t.locked);
+        if locked {
+            continue;
+        }
+        let _ = ctx
+            .doc
+            .update_clip(id, "Nudge", Some(merge_key(id, "nudge")), |c| {
+                let t = c.transform.at(0);
+                c.transform.x = (t.x + dx).into();
+                c.transform.y = (t.y + dy).into();
+            });
     }
 }
 

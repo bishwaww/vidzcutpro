@@ -89,7 +89,7 @@ fn with_state<R>(
 ) -> (R, EditorState) {
     let egui_ctx = egui::Context::default();
     let texture = egui_ctx.load_texture("t", egui::ColorImage::example(), Default::default());
-    let (thumbs, missing) = (HashMap::new(), HashSet::new());
+    let (thumbs, waveforms, missing) = (HashMap::new(), HashMap::new(), HashSet::new());
     let mut settings = UiSettings::default();
     let result = {
         let mut ctx = Ctx {
@@ -99,6 +99,7 @@ fn with_state<R>(
             layout_gen: 0,
             images: Images { mark: &texture },
             thumbs: &thumbs,
+            waveforms: &waveforms,
             missing: &missing,
             player_texture: None,
             actions: Vec::new(),

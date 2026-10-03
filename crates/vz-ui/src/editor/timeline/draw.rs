@@ -348,6 +348,25 @@ fn ruler(painter: &Painter, frame: &Frame, ctx: &Ctx<'_>) {
         }
         n += 1;
     }
+    for m in &ctx.doc.project.timeline().markers {
+        let x = geo.x(m.time);
+        if x < frame.ruler.left() - 8.0 || x > frame.ruler.right() + 8.0 {
+            continue;
+        }
+        let color = Color32::from_rgba_unmultiplied(m.color[0], m.color[1], m.color[2], m.color[3]);
+        let top = frame.ruler.bottom() - 12.0;
+        painter.add(egui::Shape::convex_polygon(
+            vec![
+                Pos2::new(x - 5.0, top),
+                Pos2::new(x + 5.0, top),
+                Pos2::new(x + 5.0, top + 6.0),
+                Pos2::new(x, top + 11.0),
+                Pos2::new(x - 5.0, top + 6.0),
+            ],
+            color,
+            Stroke::NONE,
+        ));
+    }
 }
 
 // ---- clips ------------------------------------------------------------------------------------------------------
@@ -369,6 +388,11 @@ fn clip_body(
             Color32::from_rgb(58, 46, 14),
             Color32::from_rgb(180, 140, 30),
             first_line(&t.text),
+        ),
+        Content::Shape(s) => (
+            Color32::from_rgb(48, 30, 66),
+            Color32::from_rgb(140, 90, 190),
+            s.kind.label().to_string(),
         ),
         Content::Media(m) => {
             let asset = ctx.doc.project.asset(*m);
@@ -411,6 +435,9 @@ fn clip_body(
             x += tile_w;
         }
     }
+    if let Some(wave) = clip.media().and_then(|m| ctx.waveforms.get(&m)) {
+        waveform(&clipped, clip, wave, rect);
+    }
     if missing {
         clipped.rect_filled(
             rect,
@@ -449,6 +476,29 @@ fn clip_body(
             );
             painter.rect_filled(handle, CornerRadius::same(2), theme::ACCENT);
         }
+    }
+}
+
+/// The loudness shape of an audio clip, mirrored around the middle of the clip.
+fn waveform(painter: &Painter, clip: &Clip, wave: &vz_audio::Waveform, rect: Rect) {
+    if wave.peaks.is_empty() || rect.width() < 2.0 {
+        return;
+    }
+    let visible = rect.intersect(painter.clip_rect());
+    let per_pixel = clip.duration as f64 / f64::from(rect.width());
+    let (mid, half) = (rect.center().y, rect.height() / 2.0 - 3.0);
+    // drawn relative to the loudest part of the file, so quiet recordings are still readable
+    let loudest = wave.loudest.max(0.05);
+    let gain = clip.volume.value_at(0).clamp(0.0, 2.0) / loudest;
+    let color = Color32::from_rgb(90, 210, 205);
+    let mut x = visible.left().floor();
+    while x < visible.right() {
+        let from = clip.source_in + ((f64::from(x - rect.left())) * per_pixel) as i64;
+        let to = clip.source_in + ((f64::from(x + 1.0 - rect.left())) * per_pixel) as i64;
+        let peak = (wave.peak_between(from, to) * gain).min(1.0);
+        let h = (peak * half).max(0.5);
+        painter.vline(x + 0.5, (mid - h)..=(mid + h), Stroke::new(1.0, color));
+        x += 1.0;
     }
 }
 

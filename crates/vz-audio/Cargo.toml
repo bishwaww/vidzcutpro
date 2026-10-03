@@ -13,3 +13,6 @@ cpal = "0.18.2"
 crossbeam-channel = "0.5.17"
 thiserror.workspace = true
 tracing.workspace = true
+
+[dev-dependencies]
+vz-anim = { path = "../vz-anim" }
