@@ -23,7 +23,17 @@
 - `D:\Projects\vidzcut` — the old Python/Qt prototype v1.4.0 (**reference only**, don't copy architecture). Notes: `docs/PROTOTYPE_NOTES.md`. Real test video: `D:/Gloma/with track.mp4` (read-only).
 - Docs: `docs/SPEC.md`, `docs/ARCHITECTURE.md`, `docs/PROTOTYPE_NOTES.md`, `docs/BUILDING.md`, `ROADMAP.md`.
 
-## Current state (2026-10-03) — Phase 2 built, waiting for the owner's hand test (Phase 1 hand test also still open)
+## Current state (2026-10-03) — Phase 3 built, waiting for the owner's hand test (Phase 1 and 2 hand tests: owner said "OK, continue" after Phase 2)
+
+### Phase 3 additions (read this first)
+- `vz-anim`: `Easing` now has `Named(Family, Dir)` (sine/quad/cubic/back/elastic/bounce) and `Bezier(..)`; `Animatable` has `set_key/remove_key/key_at/prev_key/next_key/set_easing/move_key/shift/freeze_at`. `shift` keeps the value at the new start (used when clips are cut or trimmed: `Clip::shift_keys`, which also shifts `speed`).
+- UI keyframes: `editor/keyframes.rs` (`Prop`, `write` = fixed value or keyframe at the playhead, `toggle_key`, `neighbour`); diamonds and `anim_slider` in `inspector.rs`; canvas drags and nudges write through `keyframes::write`.
+- Animations: `vz-presets/src/animation.rs` (data + `state_at(clip, local)`), `Clip.anim_in/out/combo: Option<AnimRef>`, applied in `Renderer::layer_for`; Animation tab `inspector/animation.rs`.
+- Transitions: `Track.transitions: Vec<Transition{after, preset, duration, easing}>`; `Timeline::layers_at` returns a `Layer` with `transition: Some(LayerTransition)` while one runs (centred on the cut); recipes in `vz-presets/src/transition.rs`, pixels in `vz-render/src/transition.rs`; `Document::set_transition / apply_transition_to_all`; UI `transition_panel.rs` + `inspector/transition.rs`; badges drawn/clicked in `timeline/{draw,input,layout}.rs`; `EditorState.selected_transition`. Renderer readers are keyed by (file, track, incoming?) so a transition between clips of one file does not thrash the decoder.
+- Speed: `Clip.speed: Animatable<f32>`, `reverse`, `keep_pitch`; maths in `vz-core/src/speed.rs` (`advance`, `source_span`, `source_time`, `split_sources`, `trimmed_left`, `with_duration`, `room_before`, `max_duration`); edits in `document/retime.rs` (`set_speed`, `set_speed_curve`, `set_reverse`, `freeze_frame`); trims/splits in `edit.rs`/`edit/free.rs` call the `Clip` helpers (`trim_left` now takes `media_len`). Audio: `vz-audio/src/retime.rs` (`Retimer`: varispeed or WSOLA, reverse via a virtual stream), used by `Mixer`. Video reverse: `VideoDecoder` keeps a run of decoded pictures when asked for earlier times (`back`). UI: `inspector/speed.rs` (Standard / Curve tabs, curve editor), toolbar Freeze.
+- Not done (see ROADMAP): graph editor, bezier handles UI, motion path, copy/paste keyframes, text animators, audio crossfade at transitions, frame-blended slow motion.
+
+### Phase 2 additions
 
 ### Phase 2 additions (read this first)
 - Model (`vz-core`): `Clip` has `content: Content::{Media, Text, Shape}`, `transform` (animatable props via `vz-anim`), `opacity`, `blend`, `crop`, `volume`, fades. Tracks: Main (magnetic), Overlay, Text, Audio (free: no overlaps, no ripple). Project FORMAT_VERSION 2 (v1 migrates). New `Document` calls: `add_text_auto`, `add_shape_auto`, `add_media_auto`, `place_*`, `update_clip(id,label,merge,f)`, `copy_clips/paste_clips/duplicate_clips` (`document/clipboard.rs`), `toggle_marker`, `split_clips`, `cut_clips_at`, `move_clip_to_new_track`.
@@ -64,4 +74,4 @@
 - Tabs Effects..Templates (except Text, Stickers) are placeholders ("Coming in Phase N"). Variable fonts are used at their default weight in the interface (video text selects bold properly).
 
 ## Next step
-Owner runs the Phase 2 checklist in `docs/TESTING.md` (and Phase 1's if not done) and says OK or reports problems → **Phase 3** (animation: keyframes everywhere, easing, in/out animations, transitions, speed). `vz-anim` already has the keyframe model; the UI for it does not exist yet.
+Owner runs the Phase 3 checklist in `docs/TESTING.md` and says OK or reports problems → **Phase 4** (colour and effects: adjust, filters/LUTs, effects library, masks, chroma key, scopes, adjustment layers; the GPU compositor probably arrives here because effects need it).

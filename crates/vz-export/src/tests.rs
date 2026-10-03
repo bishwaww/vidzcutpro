@@ -353,3 +353,62 @@ fn text_shapes_and_overlays_are_in_the_exported_file() {
     assert_eq!(red(&early), 0);
     assert!(red(&later) > 500, "{}", red(&later));
 }
+
+#[test]
+fn speed_transitions_and_animations_are_in_the_exported_file() {
+    let chart = testutil::standard(); // 4 s with sound
+    let mut doc = doc_with(&[chart.clone(), chart]);
+    doc.set_frame_rate(vz_core::FrameRate::FPS_25).unwrap();
+    let ids: Vec<_> = doc
+        .project
+        .timeline()
+        .main_track()
+        .clips
+        .iter()
+        .map(|c| c.id)
+        .collect();
+    // the first clip at double speed is 2 s long, so the project is 6 s
+    doc.set_speed(ids[0], 2.0, None).unwrap();
+    doc.set_transition(
+        ids[0],
+        Some(vz_core::Transition {
+            after: ids[0],
+            preset: "dissolve".into(),
+            duration: US_PER_SEC,
+            easing: vz_anim::Easing::Linear,
+        }),
+        None,
+    )
+    .unwrap();
+    doc.update_clip(ids[1], "a", None, |c| {
+        c.anim_out = Some(vz_core::AnimRef {
+            preset: "fade_out".into(),
+            duration: US_PER_SEC,
+        });
+    })
+    .unwrap();
+    let (_, out) = export_to(&doc, "retimed.mp4", 360);
+    let info = probe_json(&out);
+    let duration = number(&info["format"]["duration"]);
+    assert!((duration - 6.0).abs() < 0.2, "duration was {duration}");
+    assert_eq!(stream(&info, "audio")["codec_name"], "aac");
+
+    // the file shows what the preview shows: during the transition, and in the fade-out at the end
+    let mut file = VideoDecoder::open(&out, MaxSize::FULL).unwrap();
+    let mut preview = Renderer::new();
+    for t in [1_800_000, 2_000_000, 5_700_000] {
+        let from_file = file.frame_at(t).unwrap().unwrap();
+        let expected = preview.render(&doc.project, t, (640, 360));
+        let diff: f64 = from_file
+            .rgba
+            .iter()
+            .zip(&expected.rgba)
+            .map(|(a, b)| (f64::from(*a) - f64::from(*b)).abs())
+            .sum::<f64>()
+            / from_file.rgba.len() as f64;
+        assert!(
+            diff < 10.0,
+            "frame at {t} differs from the preview by {diff}"
+        );
+    }
+}

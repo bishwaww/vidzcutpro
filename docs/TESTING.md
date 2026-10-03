@@ -109,3 +109,34 @@ You need: a vertical or normal video with speech, a logo (PNG with a transparent
 14. **Export** (Ctrl+E). Play the MP4: the headline, logo, sticker, video and music must look and sound like the player.
 
 **Please tell me:** anything that looked wrong, especially Sinhala/Tamil letters (in the player, in the exported video, and while typing); anything slow; anything confusing.
+
+## Phase 3 — your checklist
+
+You need: two or three videos (one with speech or music) and a text on the timeline (Text tab → click a style).
+
+**Keyframes**
+1. Put a text or a picture on the timeline, click it, and put the playhead at its start. In the right panel (**Video** tab) click the small **diamond** next to **Position X** (it fills in).
+2. Move the playhead 2 seconds on, then drag the clip in the player (or change Position X).
+   *You should see:* a second diamond on the clip in the timeline. Press **Space**: the clip glides from one place to the other.
+3. Right-click a diamond → **How it moves to the next keyframe** → **Bounce ease out** (or any other). Play again and watch the difference.
+4. Use the **‹ ›** buttons next to **Transform** to jump between keyframes. Click a filled diamond to remove that keyframe.
+
+**Animations**
+5. Select a clip → **Animation** tab → **In** → **Pop** (or Slide, Zoom...). Drag the playhead over the start of the clip.
+6. Choose an **Out** one too, and a **Combo** one (it removes In and Out).
+
+**Transitions**
+7. Put two clips next to each other. Open the **Transitions** tab: move the mouse over the tiles to see them play. Click **Mix**.
+   *You should see:* a round badge on the cut, and the blend when you drag the playhead over it. Click the badge: **Length** and **Easing** appear on the right. Try **Apply to all cuts**. **Delete** removes a selected transition.
+8. Try a few more (Clock wipe, Cube, Glitch...). **Tell me which ones look wrong.**
+
+**Speed**
+9. Select a video clip → **Speed** tab → click **2×**.
+   *You should see:* the clip becomes half as long; later clips follow. Play it: it should sound quick but the voice keeps its pitch (untick **Keep pitch** and the voice goes high like a squeaky tape).
+10. Click **Curve**, then **Hero** (or Bullet / Montage): slow motion in the middle, fast outside. Drag a point on the curve; double-click to add a point.
+11. Tick **Reverse**: the clip plays backwards (picture and sound). Play it for a few seconds: **tell me if it stutters**.
+12. Put the playhead in the middle of a clip and press the **Freeze** button (toolbar) or **Freeze frame here** in the Speed tab: a 3-second still appears and the rest moves later.
+13. Cut (**Ctrl+B**) and trim the edges of a sped-up clip: the picture should continue smoothly across the cut.
+14. **Export** (Ctrl+E) the whole thing and play the MP4: transitions, animations, speed and sound must match the player.
+
+**Please tell me:** any transition or animation that looks wrong, jerky playback (especially reversed clips and transitions on 1080p), sound problems when changing speed, anything confusing.

@@ -4025,6 +4025,7 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.21",
  "tracing",
+ "vz-anim",
  "vz-audio",
  "vz-core",
  "vz-media",

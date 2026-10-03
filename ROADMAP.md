@@ -46,11 +46,12 @@ Legend: `[x]` done · `[ ]` to do · `[-]` skipped on purpose (reason given)
 
 **Done when:** the owner can make a 9:16 short with a talking-head video, a logo overlay, a Sinhala headline and background music, and export it.
 
-## Phase 3 — Animation
-- [ ] Keyframes on every property, easing presets + custom bezier, prev/next keyframe
-- [ ] In / Out / Combo animation presets (data files)
-- [ ] Transitions library (first 15+)
-- [ ] Speed: standard, curve presets + editor, keep pitch, reverse, freeze frame
+## Phase 3 — Animation  (built 2026-10-03, waiting for the owner's hand test)
+- [x] Keyframes on position, size, rotation, opacity and volume: diamond buttons, previous/next keyframe, auto-keyframe while dragging on the picture, keyframe diamonds on the selected clip, right-click a diamond for "how it moves to the next keyframe" (linear, hold, ease in/out, and sine / quad / cubic / back / elastic / bounce curves) and "stop animating". A custom curve (cubic bezier) exists in the engine.
+- [x] In / Out / Combo animations as data (15 In, 15 Out, 6 Combo: fade, zoom, slide, spin, swing, pop, bounce, blur, wipe, shake, turn, wobble, pulse, float...), length slider; a combo replaces In and Out
+- [x] Transitions: 35 (mix, fades, blur mix, slides, pushes, zoom, spin, wipes incl. clock / iris / diamond / barn door / blinds / split, flash, pixelate, glitch, flip, cube); live preview on hover, badge on the cut, length + easing, "apply to all cuts"; centred on the cut, first/last picture held when a clip has no more picture
+- [x] Speed: 0.1x to 100x (slider, quick buttons, or type the length), speed curves (6 presets + draggable points), reverse, freeze frame (inspector button and toolbar), "keep pitch" sound (own WSOLA time stretching) or tape-style pitch change; trimming and cutting follow the speed; reverse playback of video is smooth (pictures decoded in runs)
+- [ ] Not yet: graph editor panel, custom bezier handles in the UI, motion path on the canvas, copy / paste keyframes, dragging keyframes on the timeline, keyframes for crop / text / shape / colour properties, text animators (per letter), sound crossfade at transitions (the picture blends, the sound does not overlap), smooth slow motion (frame blending), hover preview for In/Out/Combo animations, "apply animation to all"
 
 **Done when:** a title can fly in with ease-out, a clip can zoom slowly with keyframes, and cuts can use transitions.
 
