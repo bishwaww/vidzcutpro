@@ -185,6 +185,8 @@ pub fn show(ui: &mut egui::Ui, ctx: &mut Ctx<'_>) {
                 && super::text_panel::handles(ctx.state.sub_menu)
             {
                 super::text_panel::show(ui, ctx);
+            } else if ctx.state.category == Category::Transitions {
+                super::transition_panel::show(ui, ctx);
             } else if ctx.state.category == Category::Stickers {
                 super::sticker_panel::show(ui, ctx);
             } else {

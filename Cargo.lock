@@ -4061,6 +4061,7 @@ dependencies = [
  "vz-anim",
  "vz-core",
  "vz-media",
+ "vz-presets",
  "vz-text",
  "vz-vector",
 ]
@@ -4088,6 +4089,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tracing",
+ "vz-anim",
  "vz-audio",
  "vz-core",
  "vz-export",

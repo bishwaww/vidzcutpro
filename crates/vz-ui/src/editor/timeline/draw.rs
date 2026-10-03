@@ -3,6 +3,7 @@
 use super::layout::{Frame, Geo, Row, Zone};
 use super::{Ctx, TimelineDrag};
 use crate::editor::assets::short_duration;
+use crate::editor::keyframes::{self, Prop};
 use crate::theme;
 use eframe::egui::{
     self, Align2, Color32, CornerRadius, FontId, Painter, Pos2, Rect, Shape, Stroke, StrokeKind,
@@ -83,6 +84,28 @@ pub fn all(ui: &mut egui::Ui, ctx: &Ctx<'_>, frame: &Frame) {
             "Drag material here and start to create",
             FontId::proportional(14.0),
             GREY,
+        );
+    }
+
+    // transition badges on the cuts
+    for (after, badge) in frame.transition_badges(ctx.doc.project.timeline()) {
+        if badge.right() < lane_clip.left() || badge.left() > lane_clip.right() {
+            continue;
+        }
+        let selected = ctx.state.selected_transition == Some(after);
+        let (fill, fg) = if selected {
+            (theme::ACCENT, theme::ON_ACCENT)
+        } else {
+            (Color32::from_rgb(40, 40, 40), theme::ACCENT)
+        };
+        lanes.circle_filled(badge.center(), 11.0, fill);
+        lanes.circle_stroke(badge.center(), 11.0, Stroke::new(1.0, theme::ACCENT));
+        lanes.text(
+            badge.center(),
+            Align2::CENTER_CENTER,
+            theme::icons::BLEND,
+            theme::icons::font(13.0),
+            fg,
         );
     }
 
@@ -449,12 +472,54 @@ fn clip_body(
         clipped.rect_filled(rect, round, Color32::from_black_alpha(110));
     }
 
+    // keyframes: small diamonds along the bottom edge of the selected clip
+    if selected && clip.duration > 0 {
+        let props = [
+            Prop::X,
+            Prop::Y,
+            Prop::ScaleX,
+            Prop::ScaleY,
+            Prop::Rotation,
+            Prop::Opacity,
+            Prop::Volume,
+        ];
+        let tol = keyframes::tolerance(ctx.doc.project.frame_rate.frame_start(1));
+        for t in keyframes::key_times(clip, &props, tol) {
+            let x = rect.left() + rect.width() * (t as f32 / clip.duration as f32);
+            let c = Pos2::new(x, rect.bottom() - 7.0);
+            clipped.add(egui::Shape::convex_polygon(
+                vec![
+                    Pos2::new(c.x, c.y - 4.5),
+                    Pos2::new(c.x + 4.5, c.y),
+                    Pos2::new(c.x, c.y + 4.5),
+                    Pos2::new(c.x - 4.5, c.y),
+                ],
+                theme::ACCENT,
+                Stroke::new(1.0, Color32::BLACK),
+            ));
+        }
+    }
+
     // label
     let duration = short_duration(clip.duration);
     let text = if missing {
         format!("⚠ {label} — file missing")
     } else {
-        format!("{label}   {duration}")
+        let mut badges = String::new();
+        if clip.speed.is_animated() {
+            badges.push_str("  ~curve");
+        } else if clip.speed_at(0) == 0.0 && clip.media().is_some() {
+            badges.push_str("  freeze");
+        } else if (clip.speed_at(0) - 1.0).abs() > 0.001 {
+            badges.push_str(&format!("  {:.2}×", clip.speed_at(0)).replace(".00×", "×"));
+        }
+        if clip.reverse {
+            badges.push_str("  ⟲");
+        }
+        if clip.anim_in.is_some() || clip.anim_out.is_some() || clip.anim_combo.is_some() {
+            badges.push_str("  ✦");
+        }
+        format!("{label}   {duration}{badges}")
     };
     let galley = clipped.layout_no_wrap(text, FontId::proportional(11.0), Color32::WHITE);
     let tag = Rect::from_min_size(rect.min + vec2(2.0, 2.0), galley.size() + vec2(10.0, 4.0));
@@ -493,9 +558,11 @@ fn waveform(painter: &Painter, clip: &Clip, wave: &vz_audio::Waveform, rect: Rec
     let color = Color32::from_rgb(90, 210, 205);
     let mut x = visible.left().floor();
     while x < visible.right() {
-        let from = clip.source_in + ((f64::from(x - rect.left())) * per_pixel) as i64;
-        let to = clip.source_in + ((f64::from(x + 1.0 - rect.left())) * per_pixel) as i64;
-        let peak = (wave.peak_between(from, to) * gain).min(1.0);
+        // the part of the file this pixel column stands for (speed and reverse decide where it is)
+        let at =
+            |x: f32| clip.source_time(clip.start + (f64::from(x - rect.left()) * per_pixel) as i64);
+        let (a, b) = (at(x), at(x + 1.0));
+        let peak = (wave.peak_between(a.min(b), a.max(b)) * gain).min(1.0);
         let h = (peak * half).max(0.5);
         painter.vline(x + 0.5, (mid - h)..=(mid + h), Stroke::new(1.0, color));
         x += 1.0;

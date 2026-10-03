@@ -393,3 +393,278 @@ fn empty_text_draws_nothing() {
     let f = Renderer::new().render(&s.doc.project, US_PER_SEC, SIZE);
     assert_eq!(white_pixels(&f), 0);
 }
+
+#[test]
+fn keyframed_position_and_opacity_change_over_time() {
+    use vz_anim::{Animatable, Easing, Keyframe};
+    let mut s = scene();
+    let id = add_overlay(&mut s, "lay_red_320x180.mp4", 0xFF0000, 320, 180);
+    s.doc
+        .update_clip(id, "k", None, |c| {
+            c.transform.scale_x = 0.25.into();
+            c.transform.scale_y = 0.25.into();
+            // slide from the left of the canvas centre to 600 canvas pixels right in 2 seconds
+            c.transform.x = Animatable::Keyframed(vec![
+                Keyframe {
+                    time: 0,
+                    value: 0.0,
+                    easing: Easing::Linear,
+                },
+                Keyframe {
+                    time: 2 * US_PER_SEC,
+                    value: 600.0,
+                    easing: Easing::Linear,
+                },
+            ]);
+            c.opacity = Animatable::Keyframed(vec![
+                Keyframe {
+                    time: 0,
+                    value: 1.0,
+                    easing: Easing::Linear,
+                },
+                Keyframe {
+                    time: 2 * US_PER_SEC,
+                    value: 0.0,
+                    easing: Easing::Linear,
+                },
+            ]);
+        })
+        .unwrap();
+    let mut r = Renderer::new();
+    // at the start: red in the middle, at full strength
+    let a = r.render(&s.doc.project, 0, SIZE);
+    assert!(near(pixel(&a, 160, 90), [255, 0, 0], 12));
+    // after one second: halfway (50 px in this render), half faded into the green video
+    let b = r.render(&s.doc.project, US_PER_SEC, SIZE);
+    assert!(
+        near(pixel(&b, 210, 90), [128, 100, 0], 30),
+        "{:?}",
+        pixel(&b, 210, 90)
+    );
+    assert!(
+        near(pixel(&b, 160, 90), [0, 200, 0], 12),
+        "the middle is empty again: {:?}",
+        pixel(&b, 160, 90)
+    );
+}
+
+fn with_anim(id: &str, seconds: f64) -> Option<vz_core::AnimRef> {
+    Some(vz_core::AnimRef {
+        preset: id.into(),
+        duration: (seconds * US_PER_SEC as f64) as i64,
+    })
+}
+
+#[test]
+fn an_in_animation_fades_slides_and_wipes_the_layer() {
+    let mut s = scene();
+    let id = add_overlay(&mut s, "lay_red_320x180.mp4", 0xFF0000, 320, 180);
+    let mut r = Renderer::new();
+    let red = |f: &VideoFrame, x, y| near(pixel(f, x, y), [255, 0, 0], 20);
+
+    s.doc
+        .update_clip(id, "a", None, |c| c.anim_in = with_anim("fade_in", 2.0))
+        .unwrap();
+    let start = r.render(&s.doc.project, 0, SIZE);
+    assert!(
+        near(pixel(&start, 160, 90), [0, 200, 0], 12),
+        "invisible at the very start"
+    );
+    let half = r.render(&s.doc.project, US_PER_SEC, SIZE);
+    assert!(
+        near(pixel(&half, 160, 90), [128, 100, 0], 30),
+        "{:?}",
+        pixel(&half, 160, 90)
+    );
+    let done = r.render(&s.doc.project, 2 * US_PER_SEC, SIZE);
+    assert!(red(&done, 160, 90));
+
+    // slide in from the right: at the start the layer is a whole canvas to the right (off screen)
+    s.doc
+        .update_clip(id, "a", None, |c| {
+            c.anim_in = with_anim("slide_left_in", 2.0)
+        })
+        .unwrap();
+    let start = r.render(&s.doc.project, 0, SIZE);
+    assert!(!red(&start, 160, 90) && !red(&start, 300, 90));
+    let end = r.render(&s.doc.project, 2 * US_PER_SEC, SIZE);
+    assert!(red(&end, 160, 90));
+
+    // wipe: at the start everything is hidden, halfway about the left half shows
+    s.doc
+        .update_clip(id, "a", None, |c| c.anim_in = with_anim("wipe_in", 2.0))
+        .unwrap();
+    let start = r.render(&s.doc.project, 0, SIZE);
+    assert!(!red(&start, 160, 90));
+    let mid = r.render(&s.doc.project, US_PER_SEC, SIZE);
+    assert!(
+        red(&mid, 40, 90) && !red(&mid, 300, 90),
+        "{:?} {:?}",
+        pixel(&mid, 40, 90),
+        pixel(&mid, 300, 90)
+    );
+}
+
+#[test]
+fn an_out_animation_shrinks_the_layer_away_at_the_end() {
+    let mut s = scene();
+    let id = add_overlay(&mut s, "lay_red_320x180.mp4", 0xFF0000, 320, 180);
+    s.doc
+        .update_clip(id, "a", None, |c| {
+            c.anim_out = with_anim("zoom_out_out", 1.0)
+        })
+        .unwrap();
+    let clip_end = s.doc.project.timeline().clip(id).unwrap().end();
+    let mut r = Renderer::new();
+    let before = r.render(&s.doc.project, clip_end - 1_500_000, SIZE);
+    assert!(
+        near(pixel(&before, 5, 5), [255, 0, 0], 20),
+        "still full size before the animation starts"
+    );
+    let late = r.render(&s.doc.project, clip_end - 100_000, SIZE);
+    assert!(
+        near(pixel(&late, 5, 5), [0, 200, 0], 20),
+        "the corner is empty when it has shrunk"
+    );
+}
+
+#[test]
+fn a_blur_animation_softens_text_and_a_combo_moves_it_in_a_loop() {
+    let (mut s, id) = text_scene(white_text("Hi"));
+    let mut r = Renderer::new();
+    let sharp = r.render(&s.doc.project, US_PER_SEC, SIZE);
+    let solid_sharp = sharp
+        .rgba
+        .chunks(4)
+        .filter(|p| p[0] == 255 && p[1] == 255 && p[2] == 255)
+        .count();
+    s.doc
+        .update_clip(id, "a", None, |c| c.anim_in = with_anim("blur_in", 2.0))
+        .unwrap();
+    let soft = r.render(&s.doc.project, 100_000, SIZE);
+    let solid_soft = soft
+        .rgba
+        .chunks(4)
+        .filter(|p| p[0] == 255 && p[1] == 255 && p[2] == 255)
+        .count();
+    assert!(
+        solid_soft * 2 < solid_sharp,
+        "{solid_soft} vs {solid_sharp}"
+    );
+
+    s.doc
+        .update_clip(id, "a", None, |c| {
+            c.anim_in = None;
+            c.anim_combo = with_anim("float", 1.0);
+        })
+        .unwrap();
+    let top_of_white = |f: &VideoFrame| {
+        (0..f.height)
+            .find(|y| {
+                (0..f.width).any(|x| {
+                    pixel(f, x, *y)[0] > 200 && pixel(f, x, *y)[1] > 200 && pixel(f, x, *y)[2] > 200
+                })
+            })
+            .unwrap()
+    };
+    let low = r.render(&s.doc.project, 250_000, SIZE);
+    let high = r.render(&s.doc.project, 750_000, SIZE);
+    let again = r.render(&s.doc.project, 1_250_000, SIZE);
+    assert!(
+        top_of_white(&low) > top_of_white(&high),
+        "float moves down, then up"
+    );
+    assert_eq!(top_of_white(&low), top_of_white(&again), "and repeats");
+}
+
+#[test]
+fn a_transition_blends_the_two_clips_around_the_cut() {
+    let red = solid("tr_red_320x180.mp4", 0xFF0000, 320, 180);
+    let blue = solid("tr_blue_320x180.mp4", 0x0000FF, 320, 180);
+    let mut doc = Document::new(Project::new("transition"));
+    let r = doc.import_media(vz_media::probe(&red).unwrap()).unwrap();
+    let b = doc.import_media(vz_media::probe(&blue).unwrap()).unwrap();
+    let first = doc.add_clip(r, 0).unwrap();
+    doc.add_clip(b, 1).unwrap();
+    doc.set_frame_rate(vz_core::FrameRate::FPS_25).unwrap();
+    let cut = doc.project.timeline().clip(first).unwrap().end();
+    doc.set_transition(
+        first,
+        Some(vz_core::Transition {
+            after: first,
+            preset: "dissolve".into(),
+            duration: 2 * US_PER_SEC,
+            easing: vz_anim::Easing::Linear,
+        }),
+        None,
+    )
+    .unwrap();
+    let mut rd = Renderer::new();
+    let before = rd.render(&doc.project, cut - 1_500_000, SIZE);
+    assert!(
+        near(pixel(&before, 160, 90), [255, 0, 0], 12),
+        "{:?}",
+        pixel(&before, 160, 90)
+    );
+    let at_cut = rd.render(&doc.project, cut, SIZE);
+    assert!(
+        near(pixel(&at_cut, 160, 90), [128, 0, 128], 30),
+        "{:?}",
+        pixel(&at_cut, 160, 90)
+    );
+    let after = rd.render(&doc.project, cut + 1_500_000, SIZE);
+    assert!(near(pixel(&after, 160, 90), [0, 0, 255], 12));
+
+    // a wipe from the left: halfway through, the left side already shows the new clip
+    doc.set_transition(
+        first,
+        Some(vz_core::Transition {
+            after: first,
+            preset: "wipe_right".into(),
+            duration: 2 * US_PER_SEC,
+            easing: vz_anim::Easing::Linear,
+        }),
+        None,
+    )
+    .unwrap();
+    let half = rd.render(&doc.project, cut, SIZE);
+    assert!(
+        near(pixel(&half, 20, 90), [0, 0, 255], 12) && near(pixel(&half, 300, 90), [255, 0, 0], 12)
+    );
+}
+
+#[test]
+fn a_faster_clip_shows_the_picture_from_further_into_the_file() {
+    let chart = testutil::standard(); // moving chart with a clock, 4 s
+    let make = || {
+        let mut doc = Document::new(Project::new("speed"));
+        let m = doc.import_media(vz_media::probe(&chart).unwrap()).unwrap();
+        let id = doc.add_clip(m, 0).unwrap();
+        doc.set_frame_rate(vz_core::FrameRate::FPS_25).unwrap();
+        (doc, id)
+    };
+    let (normal, _) = make();
+    let (mut fast, id) = make();
+    fast.set_speed(id, 2.0, None).unwrap();
+    let mut r = Renderer::new();
+    let a = r.render(&fast.project, 500_000, (160, 90));
+    let b = Renderer::new().render(&normal.project, 1_000_000, (160, 90));
+    assert_eq!(
+        a.rgba, b.rgba,
+        "half a second at double speed is one second of the file"
+    );
+    // reversed: the start of the clip shows the end of the file
+    let (mut back, id) = make();
+    back.set_reverse(id, true).unwrap();
+    let c = Renderer::new().render(&back.project, 0, (160, 90));
+    let d = Renderer::new().render(&normal.project, 3_960_000, (160, 90));
+    assert_eq!(c.rgba, d.rgba);
+    // and a freeze shows one picture for as long as it lasts
+    let (mut frozen, id) = make();
+    let still = frozen.freeze_frame(id, 1_000_000, 2_000_000).unwrap();
+    let start = frozen.project.timeline().clip(still).unwrap().start;
+    let mut r = Renderer::new();
+    let p1 = r.render(&frozen.project, start + 100_000, (160, 90));
+    let p2 = r.render(&frozen.project, start + 1_900_000, (160, 90));
+    assert_eq!(p1.rgba, p2.rgba);
+}

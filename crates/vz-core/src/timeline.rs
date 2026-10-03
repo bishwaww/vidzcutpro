@@ -2,10 +2,14 @@
 
 use crate::content::{Content, ShapeContent, TextContent};
 use crate::ids::{ClipId, GroupId, LinkId, MarkerId, MediaId, TimelineId, TrackId};
-use crate::layer::{BlendMode, Color, Crop, Transform};
+use crate::layer::{AnimRef, BlendMode, Color, Crop, Transform};
 use crate::time::Micros;
 use serde::{Deserialize, Serialize};
-use vz_anim::Animatable;
+use vz_anim::{Animatable, Easing};
+
+fn yes() -> bool {
+    true
+}
 
 fn one() -> Animatable<f32> {
     Animatable::Static(1.0)
@@ -46,6 +50,23 @@ pub struct Clip {
     pub group: Option<GroupId>,
     #[serde(default)]
     pub link: Option<LinkId>,
+    /// How fast the media plays: 1.0 normal, 2.0 twice as fast, 0.0 a freeze frame. Can change along the clip.
+    #[serde(default = "one")]
+    pub speed: Animatable<f32>,
+    /// Play the part of the file backwards.
+    #[serde(default)]
+    pub reverse: bool,
+    /// Keep the voice at its normal pitch when the speed changes (sound only).
+    #[serde(default = "yes")]
+    pub keep_pitch: bool,
+    /// Ready-made animation when the clip appears, when it leaves, and a looping one while it is shown
+    /// (a loop replaces in and out).
+    #[serde(default)]
+    pub anim_in: Option<AnimRef>,
+    #[serde(default)]
+    pub anim_out: Option<AnimRef>,
+    #[serde(default)]
+    pub anim_combo: Option<AnimRef>,
 }
 
 impl Clip {
@@ -65,6 +86,12 @@ impl Clip {
             fade_out: 0,
             group: None,
             link: None,
+            anim_in: None,
+            anim_out: None,
+            anim_combo: None,
+            speed: one(),
+            reverse: false,
+            keep_pitch: true,
         }
     }
 
@@ -101,9 +128,17 @@ impl Clip {
         t >= self.start && t < self.end()
     }
 
-    /// The time inside the media file that is shown at timeline time `t`.
-    pub fn source_time(&self, t: Micros) -> Micros {
-        self.source_in + (t - self.start)
+    /// Move every keyframe `delta` microseconds later in the clip (negative: earlier). Used when the start of a clip
+    /// changes, so an animation stays attached to the same pictures.
+    pub fn shift_keys(&mut self, delta: Micros) {
+        self.transform.x.shift(delta);
+        self.transform.y.shift(delta);
+        self.transform.scale_x.shift(delta);
+        self.transform.scale_y.shift(delta);
+        self.transform.rotation.shift(delta);
+        self.opacity.shift(delta);
+        self.volume.shift(delta);
+        self.speed.shift(delta);
     }
 
     /// How far into the clip timeline time `t` is (what keyframes are measured from).
@@ -145,6 +180,30 @@ impl TrackKind {
     }
 }
 
+/// A transition between a clip and the clip right after it on the same track. It is centred on the cut: the
+/// second half of it is shown over the end of the first clip, the first half over the start of the next.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Transition {
+    /// The clip that ends at the cut (the outgoing one).
+    pub after: ClipId,
+    /// Which transition (see `vz-presets`).
+    pub preset: String,
+    pub duration: Micros,
+    #[serde(default)]
+    pub easing: Easing,
+}
+
+impl Transition {
+    /// The time the transition really takes between these two clips: as long as asked, but never longer than
+    /// either clip, so the transitions at the two ends of a clip never overlap.
+    pub fn effective(&self, outgoing: &Clip, incoming: &Clip) -> Micros {
+        self.duration
+            .min(outgoing.duration)
+            .min(incoming.duration)
+            .max(0)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Track {
     pub id: TrackId,
@@ -158,6 +217,8 @@ pub struct Track {
     pub muted: bool,
     /// Clips in timeline order.
     pub clips: Vec<Clip>,
+    #[serde(default)]
+    pub transitions: Vec<Transition>,
 }
 
 impl Track {
@@ -170,6 +231,7 @@ impl Track {
             hidden: false,
             muted: false,
             clips: Vec::new(),
+            transitions: Vec::new(),
         }
     }
 
@@ -189,6 +251,28 @@ impl Track {
     pub fn clip_at(&self, t: Micros) -> Option<&Clip> {
         self.clips.iter().find(|c| c.contains(t))
     }
+
+    /// The transition at the end of `clip`, if there is one and a clip follows right after it.
+    pub fn transition_after(&self, clip: ClipId) -> Option<(&Transition, &Clip, &Clip)> {
+        let tr = self.transitions.iter().find(|t| t.after == clip)?;
+        let i = self.clips.iter().position(|c| c.id == clip)?;
+        let a = &self.clips[i];
+        let b = self.clips.get(i + 1)?;
+        (b.start == a.end()).then_some((tr, a, b))
+    }
+}
+
+/// The two clips of a transition that is running, and how far along it is.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct LayerTransition<'a> {
+    /// The incoming clip (the layer's own clip is the outgoing one).
+    pub incoming: &'a Clip,
+    /// The moment of the incoming clip's media to show (can be before its start: the media is held at its first picture).
+    pub incoming_source_time: Micros,
+    /// How far along the transition is, 0 to 1, in a straight line (the easing is applied by whoever draws).
+    pub progress: f32,
+    pub preset: &'a str,
+    pub easing: Easing,
 }
 
 /// What is visible at one moment: a clip, and which moment of its media to show.
@@ -197,6 +281,8 @@ pub struct Layer<'a> {
     pub track: &'a Track,
     pub clip: &'a Clip,
     pub source_time: Micros,
+    /// Set while a transition from this clip to the next one is running.
+    pub transition: Option<LayerTransition<'a>>,
 }
 
 /// A flag on the timeline ruler.
@@ -272,13 +358,46 @@ impl Timeline {
             .iter()
             .filter(|track| track.kind.is_visual() && !track.hidden)
             .filter_map(|track| {
+                if let Some(layer) = Self::transition_layer(track, t) {
+                    return Some(layer);
+                }
                 track.clip_at(t).map(|clip| Layer {
                     track,
                     clip,
                     source_time: clip.source_time(t),
+                    transition: None,
                 })
             })
             .collect()
+    }
+
+    /// The layer of a track at `t` when `t` is inside one of its transitions.
+    fn transition_layer(track: &Track, t: Micros) -> Option<Layer<'_>> {
+        for tr in &track.transitions {
+            let Some((tr, a, b)) = track.transition_after(tr.after) else {
+                continue;
+            };
+            let d = tr.effective(a, b);
+            if d <= 0 {
+                continue;
+            }
+            let (from, to) = (a.end() - d / 2, a.end() + d - d / 2);
+            if t >= from && t < to {
+                return Some(Layer {
+                    track,
+                    clip: a,
+                    source_time: a.source_time(t),
+                    transition: Some(LayerTransition {
+                        incoming: b,
+                        incoming_source_time: b.source_time(t).max(0),
+                        progress: (t - from) as f32 / d as f32,
+                        preset: &tr.preset,
+                        easing: tr.easing,
+                    }),
+                });
+            }
+        }
+        None
     }
 
     /// A free name such as "Overlay 2" for a new track.

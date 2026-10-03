@@ -3,6 +3,7 @@
 
 use super::Ctx;
 use super::geometry::{Placed, pick, placed};
+use super::keyframes::{self, Prop};
 use crate::theme;
 use eframe::egui::{
     self, Color32, CornerRadius, Pos2, Rect, Sense, Shape, Stroke, StrokeKind, Vec2, vec2,
@@ -228,6 +229,18 @@ pub fn show(ui: &mut egui::Ui, ctx: &mut Ctx<'_>, rect: Rect) {
     }
 }
 
+/// The clip-local time and keyframe tolerance to write a changed value at (the playhead).
+fn write_time(ctx: &Ctx<'_>, id: ClipId) -> (vz_core::Micros, vz_core::Micros) {
+    let frame = ctx.doc.project.frame_rate.frame_start(1);
+    let local = ctx
+        .doc
+        .project
+        .timeline()
+        .clip(id)
+        .map_or(0, |c| keyframes::local_time(c, ctx.state.playhead));
+    (local, keyframes::tolerance(frame))
+}
+
 /// Move the selected layers by whole pixels (arrow keys).
 pub fn nudge(ctx: &mut Ctx<'_>, dx: f32, dy: f32) {
     for id in ctx.state.selection.clone() {
@@ -240,12 +253,13 @@ pub fn nudge(ctx: &mut Ctx<'_>, dx: f32, dy: f32) {
         if locked {
             continue;
         }
+        let (local, tol) = write_time(ctx, id);
         let _ = ctx
             .doc
             .update_clip(id, "Nudge", Some(merge_key(id, "nudge")), |c| {
-                let t = c.transform.at(0);
-                c.transform.x = (t.x + dx).into();
-                c.transform.y = (t.y + dy).into();
+                let t = c.transform.at(local);
+                keyframes::write(c, Prop::X, local, t.x + dx, tol);
+                keyframes::write(c, Prop::Y, local, t.y + dy, tol);
             });
     }
 }
@@ -388,11 +402,12 @@ fn drag_to(ctx: &mut Ctx<'_>, view: &View, drag: CanvasDrag, pos: Pos2, shift: b
             x += dx;
             y += dy;
             ctx.state.guides = guides;
+            let (local, tol) = write_time(ctx, clip);
             let _ = ctx
                 .doc
                 .update_clip(clip, "Move", Some(merge_key(clip, "canvas-move")), |c| {
-                    c.transform.x = x.into();
-                    c.transform.y = y.into();
+                    keyframes::write(c, Prop::X, local, x, tol);
+                    keyframes::write(c, Prop::Y, local, y, tol);
                 });
         }
         CanvasDrag::Scale {
@@ -420,11 +435,12 @@ fn drag_to(ctx: &mut Ctx<'_>, view: &View, drag: CanvasDrag, pos: Pos2, shift: b
                 (start.x * kx).clamp(0.02, 20.0),
                 (start.y * ky).clamp(0.02, 20.0),
             );
+            let (local, tol) = write_time(ctx, clip);
             let _ =
                 ctx.doc
                     .update_clip(clip, "Resize", Some(merge_key(clip, "canvas-scale")), |c| {
-                        c.transform.scale_x = sx.into();
-                        c.transform.scale_y = sy.into();
+                        keyframes::write(c, Prop::ScaleX, local, sx, tol);
+                        keyframes::write(c, Prop::ScaleY, local, sy, tol);
                     });
         }
         CanvasDrag::Rotate {
@@ -443,13 +459,12 @@ fn drag_to(ctx: &mut Ctx<'_>, view: &View, drag: CanvasDrag, pos: Pos2, shift: b
             if shift {
                 rotation = (rotation / 15.0).round() * 15.0;
             }
+            let (local, tol) = write_time(ctx, clip);
             let _ = ctx.doc.update_clip(
                 clip,
                 "Rotate",
                 Some(merge_key(clip, "canvas-rotate")),
-                |c| {
-                    c.transform.rotation = rotation.into();
-                },
+                |c| keyframes::write(c, Prop::Rotation, local, rotation, tol),
             );
         }
     }

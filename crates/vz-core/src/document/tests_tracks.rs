@@ -747,3 +747,315 @@ fn a_marker_is_added_then_removed_by_the_same_key_and_both_can_be_undone() {
     assert_eq!(doc.project.timeline().markers.len(), 2);
     assert!(doc.project.timeline().markers[0].time < doc.project.timeline().markers[1].time);
 }
+
+fn doc_with_two_main_clips() -> (Document, ClipId, ClipId) {
+    let mut doc = Document::new(Project::new("t"));
+    let v = doc.import_media(asset("v", MediaKind::Video, 10)).unwrap();
+    let a = doc.add_clip(v, 0).unwrap();
+    let b = doc.add_clip(v, 1).unwrap();
+    (doc, a, b)
+}
+
+fn dissolve(after: ClipId, seconds: i64) -> Transition {
+    Transition {
+        after,
+        preset: "dissolve".into(),
+        duration: seconds * US_PER_SEC,
+        easing: vz_anim::Easing::Linear,
+    }
+}
+
+use crate::timeline::Transition;
+
+#[test]
+fn a_transition_joins_two_clips_and_undo_removes_it() {
+    let (mut doc, a, _) = doc_with_two_main_clips();
+    doc.set_transition(a, Some(dissolve(a, 1)), None).unwrap();
+    assert_eq!(doc.project.timeline().main_track().transitions.len(), 1);
+    assert!(doc.undo());
+    assert!(doc.project.timeline().main_track().transitions.is_empty());
+}
+
+#[test]
+fn the_last_clip_cannot_have_a_transition_after_it() {
+    let (mut doc, _, b) = doc_with_two_main_clips();
+    assert!(doc.set_transition(b, Some(dissolve(b, 1)), None).is_err());
+}
+
+#[test]
+fn replacing_and_removing_a_transition() {
+    let (mut doc, a, _) = doc_with_two_main_clips();
+    doc.set_transition(a, Some(dissolve(a, 1)), None).unwrap();
+    doc.set_transition(a, Some(dissolve(a, 2)), None).unwrap();
+    let t = &doc.project.timeline().main_track().transitions;
+    assert_eq!(t.len(), 1);
+    assert_eq!(t[0].duration, 2 * US_PER_SEC);
+    doc.set_transition(a, None, None).unwrap();
+    assert!(doc.project.timeline().main_track().transitions.is_empty());
+}
+
+#[test]
+fn dragging_a_duration_slider_is_one_undo_step() {
+    let (mut doc, a, _) = doc_with_two_main_clips();
+    doc.set_transition(a, Some(dissolve(a, 1)), None).unwrap();
+    for secs in [2, 3, 4] {
+        doc.set_transition(a, Some(dissolve(a, secs)), Some(77))
+            .unwrap();
+    }
+    doc.seal_history();
+    assert!(doc.undo());
+    assert_eq!(
+        doc.project.timeline().main_track().transitions[0].duration,
+        US_PER_SEC
+    );
+}
+
+#[test]
+fn a_running_transition_shows_both_clips_around_the_cut() {
+    let (mut doc, a, b) = doc_with_two_main_clips();
+    doc.set_transition(a, Some(dissolve(a, 2)), None).unwrap();
+    let cut = doc.project.timeline().clip(a).unwrap().end();
+    let tl = doc.project.timeline();
+    // well before the transition: just the first clip
+    let layers = tl.layers_at(cut - 2 * US_PER_SEC);
+    assert!(layers[0].transition.is_none() && layers[0].clip.id == a);
+    // at the start of the one second before the cut: running, progress 0, both clips known
+    let layers = tl.layers_at(cut - US_PER_SEC);
+    let tr = layers[0].transition.unwrap();
+    assert_eq!(tr.incoming.id, b);
+    assert!(tr.progress.abs() < 1e-6);
+    // exactly on the cut: halfway
+    let layers = tl.layers_at(cut);
+    assert!((layers[0].transition.unwrap().progress - 0.5).abs() < 1e-3);
+    assert_eq!(
+        layers[0].clip.id, a,
+        "the outgoing clip stays the layer's clip"
+    );
+    // the incoming clip is shown from before its start: its media time is held at the first picture
+    assert_eq!(layers[0].transition.unwrap().incoming_source_time, 0);
+    // after the transition: only the second clip
+    let layers = tl.layers_at(cut + US_PER_SEC);
+    assert!(layers[0].transition.is_none() && layers[0].clip.id == b);
+}
+
+#[test]
+fn a_transition_never_lasts_longer_than_the_shorter_clip() {
+    let (mut doc, a, b) = doc_with_two_main_clips();
+    doc.trim_right(b, US_PER_SEC, None).ok();
+    doc.set_transition(a, Some(dissolve(a, 60)), None).unwrap();
+    let main = doc.project.timeline().main_track();
+    let (tr, ca, cb) = main.transition_after(a).unwrap();
+    assert!(tr.effective(ca, cb) <= cb.duration);
+}
+
+#[test]
+fn apply_to_all_puts_one_on_every_cut_in_one_step() {
+    let mut doc = Document::new(Project::new("t"));
+    let v = doc.import_media(asset("v", MediaKind::Video, 10)).unwrap();
+    for _ in 0..4 {
+        doc.add_clip(v, usize::MAX).unwrap();
+    }
+    let n = doc
+        .apply_transition_to_all("dissolve", US_PER_SEC, vz_anim::Easing::Linear)
+        .unwrap();
+    assert_eq!(n, 3);
+    assert_eq!(doc.project.timeline().main_track().transitions.len(), 3);
+    assert!(doc.undo());
+    assert!(doc.project.timeline().main_track().transitions.is_empty());
+}
+
+#[test]
+fn transitions_are_saved_with_the_track_and_old_projects_load_without() {
+    let (mut doc, a, _) = doc_with_two_main_clips();
+    doc.set_transition(a, Some(dissolve(a, 1)), None).unwrap();
+    let json = serde_json::to_string(&doc.project).unwrap();
+    let back: Project = serde_json::from_str(&json).unwrap();
+    assert_eq!(back.timeline().main_track().transitions.len(), 1);
+}
+
+fn doc_with_one_clip(seconds: i64) -> (Document, ClipId) {
+    let mut doc = Document::new(Project::new("t"));
+    let v = doc
+        .import_media(asset("v", MediaKind::Video, seconds))
+        .unwrap();
+    let id = doc.add_clip(v, 0).unwrap();
+    (doc, id)
+}
+
+#[test]
+fn double_speed_halves_the_clip_and_keeps_the_same_part_of_the_file() {
+    let (mut doc, id) = doc_with_one_clip(10);
+    doc.set_speed(id, 2.0, None).unwrap();
+    let c = doc.project.timeline().clip(id).unwrap();
+    assert_eq!(c.duration, 5 * US_PER_SEC);
+    assert_eq!(c.source_span(), 10 * US_PER_SEC);
+    // half speed doubles it again, relative to the original 10 s of media
+    doc.set_speed(id, 0.5, None).unwrap();
+    assert_eq!(
+        doc.project.timeline().clip(id).unwrap().duration,
+        20 * US_PER_SEC
+    );
+    assert!(doc.undo());
+    assert_eq!(
+        doc.project.timeline().clip(id).unwrap().duration,
+        5 * US_PER_SEC
+    );
+}
+
+#[test]
+fn the_main_track_closes_up_after_a_speed_change() {
+    let mut doc = Document::new(Project::new("t"));
+    let v = doc.import_media(asset("v", MediaKind::Video, 10)).unwrap();
+    let a = doc.add_clip(v, 0).unwrap();
+    let b = doc.add_clip(v, 1).unwrap();
+    doc.set_speed(a, 2.0, None).unwrap();
+    let main = doc.project.timeline().main_track();
+    assert_eq!(main.clips[1].id, b);
+    assert_eq!(main.clips[1].start, 5 * US_PER_SEC);
+}
+
+#[test]
+fn a_speed_change_that_would_run_into_the_next_clip_on_a_free_track_is_refused() {
+    let mut doc = Document::new(Project::new("t"));
+    let v = doc.import_media(asset("v", MediaKind::Video, 4)).unwrap();
+    doc.add_clip(v, 0).unwrap();
+    let track = doc.add_track(TrackKind::Overlay).unwrap();
+    let a = doc.place_media(track, v, 0).unwrap();
+    doc.place_media(track, v, 4 * US_PER_SEC).unwrap();
+    assert!(
+        doc.set_speed(a, 0.5, None).is_err(),
+        "twice as long would overlap"
+    );
+    assert!(doc.set_speed(a, 2.0, None).is_ok());
+}
+
+#[test]
+fn a_speed_curve_keeps_the_media_and_sets_the_length_from_the_average() {
+    let (mut doc, id) = doc_with_one_clip(10);
+    // 1x to 3x: the average is 2x, so 10 s of media take 5 s
+    doc.set_speed_curve(id, &[(0.0, 1.0), (1.0, 3.0)]).unwrap();
+    let c = doc.project.timeline().clip(id).unwrap();
+    assert!(
+        (c.duration - 5 * US_PER_SEC).abs() < 50_000,
+        "{}",
+        c.duration
+    );
+    assert!(
+        (c.source_span() - 10 * US_PER_SEC).abs() < 100_000,
+        "{}",
+        c.source_span()
+    );
+    assert!(c.speed.is_animated());
+    // a flat 1x curve is the original length
+    doc.set_speed_curve(id, &[(0.0, 1.0), (1.0, 1.0)]).unwrap();
+    assert!((doc.project.timeline().clip(id).unwrap().duration - 10 * US_PER_SEC).abs() < 100_000);
+    assert!(doc.set_speed_curve(id, &[(0.0, 0.0), (1.0, 0.0)]).is_err());
+}
+
+#[test]
+fn reverse_plays_the_same_part_backwards_and_cuts_still_work() {
+    let (mut doc, id) = doc_with_one_clip(10);
+    doc.set_reverse(id, true).unwrap();
+    let c = doc.project.timeline().clip(id).unwrap().clone();
+    assert_eq!(c.source_time(0), 10 * US_PER_SEC);
+    // cut in the middle: the first half plays the top of the file, the second half the bottom
+    let new = doc.split_clip(id, 4 * US_PER_SEC).unwrap();
+    let left = doc.project.timeline().clip(id).unwrap().clone();
+    let right = doc.project.timeline().clip(new).unwrap().clone();
+    assert_eq!(left.source_time(0), 10 * US_PER_SEC);
+    assert_eq!(left.source_time(4 * US_PER_SEC), 6 * US_PER_SEC);
+    assert_eq!(
+        right.source_time(4 * US_PER_SEC),
+        6 * US_PER_SEC,
+        "the second half carries on where the first ends"
+    );
+    assert_eq!(right.source_time(10 * US_PER_SEC), 0);
+}
+
+#[test]
+fn a_cut_in_a_sped_up_clip_continues_seamlessly() {
+    let (mut doc, id) = doc_with_one_clip(10);
+    doc.set_speed(id, 2.0, None).unwrap(); // 5 s long, uses 0..10 s of the file
+    let new = doc.split_clip(id, 2 * US_PER_SEC).unwrap();
+    let left = doc.project.timeline().clip(id).unwrap().clone();
+    let right = doc.project.timeline().clip(new).unwrap().clone();
+    assert_eq!(left.source_time(2 * US_PER_SEC), 4 * US_PER_SEC);
+    assert_eq!(right.source_time(2 * US_PER_SEC), 4 * US_PER_SEC);
+    assert_eq!(right.source_time(5 * US_PER_SEC), 10 * US_PER_SEC);
+}
+
+#[test]
+fn trimming_a_sped_up_clip_moves_the_media_by_the_speed() {
+    let (mut doc, id) = doc_with_one_clip(10);
+    doc.set_speed(id, 2.0, None).unwrap();
+    doc.trim_left(id, US_PER_SEC, None).unwrap(); // one timeline second = two seconds of media
+    let c = doc.project.timeline().clip(id).unwrap();
+    assert_eq!(c.source_in, 2 * US_PER_SEC);
+    assert_eq!(c.duration, 4 * US_PER_SEC);
+    // the end cannot be dragged past the end of the file: 8 s of media left = 4 s
+    assert!(doc.trim_right(id, 4 * US_PER_SEC + 200_000, None).is_err());
+    assert!(doc.trim_right(id, 4 * US_PER_SEC, None).is_ok());
+}
+
+#[test]
+fn trimming_a_reversed_clip_cuts_the_right_end_of_the_part_of_the_file() {
+    let (mut doc, id) = doc_with_one_clip(10);
+    doc.trim_right(id, 6 * US_PER_SEC, None).unwrap(); // uses 0..6 s
+    doc.set_reverse(id, true).unwrap();
+    // shorten from the left: the clip starts later, which is lower in the file (the top end is removed)
+    doc.trim_left(id, 2 * US_PER_SEC, None).unwrap();
+    let c = doc.project.timeline().clip(id).unwrap();
+    assert_eq!(c.source_in, 0);
+    assert_eq!(
+        c.source_time(0),
+        4 * US_PER_SEC,
+        "now starts at 4 s of the file, playing down to 0"
+    );
+    // shorten from the right: the bottom end is removed
+    doc.trim_right(id, 3 * US_PER_SEC, None).unwrap();
+    let c = doc.project.timeline().clip(id).unwrap();
+    assert_eq!(c.source_in, US_PER_SEC);
+    assert_eq!(c.source_time(0), 4 * US_PER_SEC);
+    assert_eq!(c.source_time(3 * US_PER_SEC), US_PER_SEC);
+}
+
+#[test]
+fn a_freeze_frame_cuts_the_clip_and_inserts_a_still() {
+    let (mut doc, id) = doc_with_one_clip(10);
+    let still = doc
+        .freeze_frame(id, 4 * US_PER_SEC, 3 * US_PER_SEC)
+        .unwrap();
+    let main = doc.project.timeline().main_track();
+    assert_eq!(main.clips.len(), 3);
+    assert_eq!(main.clips[1].id, still);
+    assert_eq!(main.clips[1].start, 4 * US_PER_SEC);
+    assert_eq!(main.clips[1].duration, 3 * US_PER_SEC);
+    assert_eq!(
+        main.clips[2].start,
+        7 * US_PER_SEC,
+        "what follows moves later"
+    );
+    // the still shows the picture at 4 s of the file for its whole length
+    assert_eq!(main.clips[1].source_time(4 * US_PER_SEC), 4 * US_PER_SEC);
+    assert_eq!(main.clips[1].source_time(6 * US_PER_SEC), 4 * US_PER_SEC);
+    assert_eq!(
+        main.clips[1].volume.value_at(0),
+        0.0,
+        "no sound from a still"
+    );
+    // the second half carries on from 4 s
+    assert_eq!(main.clips[2].source_in, 4 * US_PER_SEC);
+    // everything is one undo step
+    assert!(doc.undo());
+    assert_eq!(doc.project.timeline().main_track().clips.len(), 1);
+}
+
+#[test]
+fn a_freeze_at_the_very_start_or_on_text_is_refused() {
+    let (mut doc, id) = doc_with_one_clip(10);
+    assert!(doc.freeze_frame(id, 0, US_PER_SEC).is_err());
+    let (_, text) = doc
+        .add_text_auto(0, US_PER_SEC, TextContent::new("t"))
+        .unwrap();
+    assert!(doc.freeze_frame(text, US_PER_SEC / 2, US_PER_SEC).is_err());
+}

@@ -91,17 +91,20 @@ pub fn split(
     if at - clip.start < min || clip.end() - at < min {
         return Err(EditError::OutOfRange);
     }
+    let (left_in, right_in) = clip.split_sources(at - clip.start);
     let left = Clip {
         duration: at - clip.start,
+        source_in: left_in,
         ..clip.clone()
     };
-    let right = Clip {
+    let mut right = Clip {
         id: new_id,
         start: at,
-        source_in: clip.source_in + (at - clip.start),
+        source_in: right_in,
         duration: clip.end() - at,
         ..clip.clone()
     };
+    right.shift_keys(-(at - clip.start));
     let mut out = clips.to_vec();
     out[i] = left;
     out.insert(i + 1, right);
@@ -123,25 +126,23 @@ pub fn delete(clips: &[Clip], ids: &[ClipId]) -> Result<Vec<Clip>, EditError> {
 }
 
 /// Move the left edge of a clip by `delta` (positive = shorten from the left, negative = reveal more).
-/// The out point stays where it is. Later clips shift to follow (the magnet).
+/// The out point stays where it is. Later clips shift to follow (the magnet). `media_len` is the length of the
+/// clip's file (`None` for pictures and text).
 pub fn trim_left(
     clips: &[Clip],
     id: ClipId,
     delta: Micros,
+    media_len: Option<Micros>,
     rate: FrameRate,
 ) -> Result<Vec<Clip>, EditError> {
     let i = position(clips, id)?;
     let delta = rate.snap(delta.abs()) * delta.signum();
     let c = &clips[i];
-    if c.source_in + delta < 0 {
-        return Err(EditError::BeyondMedia);
-    }
     if c.duration - delta < min_duration(rate) {
         return Err(EditError::TooShort);
     }
     let mut out = clips.to_vec();
-    out[i].source_in += delta;
-    out[i].duration -= delta;
+    out[i] = c.trimmed_left(delta, media_len)?;
     Ok(packed(out))
 }
 
@@ -159,11 +160,8 @@ pub fn trim_right(
     if new_duration < min_duration(rate) {
         return Err(EditError::TooShort);
     }
-    if media_len.is_some_and(|len| clips[i].source_in + new_duration > len) {
-        return Err(EditError::BeyondMedia);
-    }
     let mut out = clips.to_vec();
-    out[i].duration = new_duration;
+    out[i] = clips[i].with_duration(new_duration, media_len)?;
     Ok(packed(out))
 }
 
@@ -328,7 +326,7 @@ mod tests {
     #[test]
     fn trim_left_shortens_and_moves_the_in_point() {
         let clips = track(&[4, 2]);
-        let out = trim_left(&clips, clips[0].id, US_PER_SEC, RATE).unwrap();
+        let out = trim_left(&clips, clips[0].id, US_PER_SEC, None, RATE).unwrap();
         assert_eq!(
             (out[0].source_in, out[0].duration),
             (US_PER_SEC, 3 * US_PER_SEC)
@@ -346,13 +344,13 @@ mod tests {
         let mut clips = track(&[4]);
         clips[0].source_in = 2 * US_PER_SEC;
         let id = clips[0].id;
-        let out = trim_left(&clips, id, -US_PER_SEC, RATE).unwrap();
+        let out = trim_left(&clips, id, -US_PER_SEC, None, RATE).unwrap();
         assert_eq!(
             (out[0].source_in, out[0].duration),
             (US_PER_SEC, 5 * US_PER_SEC)
         );
         assert_eq!(
-            trim_left(&clips, id, -3 * US_PER_SEC, RATE),
+            trim_left(&clips, id, -3 * US_PER_SEC, None, RATE),
             Err(EditError::BeyondMedia)
         );
     }
@@ -361,10 +359,10 @@ mod tests {
     fn trim_left_cannot_remove_the_whole_clip() {
         let clips = track(&[1]);
         assert_eq!(
-            trim_left(&clips, clips[0].id, US_PER_SEC, RATE),
+            trim_left(&clips, clips[0].id, US_PER_SEC, None, RATE),
             Err(EditError::TooShort)
         );
-        assert!(trim_left(&clips, clips[0].id, US_PER_SEC - 40_000, RATE).is_ok());
+        assert!(trim_left(&clips, clips[0].id, US_PER_SEC - 40_000, None, RATE).is_ok());
     }
 
     #[test]
@@ -418,7 +416,7 @@ mod tests {
                     RATE,
                     ClipId::new(),
                 ),
-                1 => trim_left(&clips, id, (next() % 1_000_000) as i64, RATE),
+                1 => trim_left(&clips, id, (next() % 1_000_000) as i64, None, RATE),
                 2 => trim_right(&clips, id, (next() % 3_000_000) as i64 + 40_000, None, RATE),
                 3 => move_clip(&clips, id, next() % 6),
                 _ => insert(&clips, next() % 6, clip(1))

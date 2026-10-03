@@ -106,7 +106,14 @@ pub fn pointer(ui: &egui::Ui, ctx: &mut Ctx<'_>, resp: &egui::Response, frame: &
         && let Some(pos) = resp.interact_pointer_pos()
     {
         let toggle = ui.input(|i| i.modifiers.command || i.modifiers.shift);
-        if pos.y <= frame.ruler.bottom() && pos.x >= frame.geo.lane_x0 {
+        let badge = frame
+            .transition_badges(ctx.doc.project.timeline())
+            .into_iter()
+            .find(|(_, r)| r.contains(pos));
+        if let Some((after, _)) = badge {
+            ctx.state.selected_transition = Some(after);
+            ctx.state.selection.clear();
+        } else if pos.y <= frame.ruler.bottom() && pos.x >= frame.geo.lane_x0 {
             seek(ctx, frame.geo.time(pos.x));
         } else if let Some((_, clip, _)) = clip_at(ctx, frame, pos) {
             if toggle {
@@ -118,8 +125,10 @@ pub fn pointer(ui: &egui::Ui, ctx: &mut Ctx<'_>, resp: &egui::Response, frame: &
             } else {
                 ctx.state.selection = vec![clip.id];
             }
+            ctx.state.selected_transition = None;
         } else if pos.x >= frame.geo.lane_x0 && !toggle {
             ctx.state.selection.clear();
+            ctx.state.selected_transition = None;
         }
     }
 
@@ -149,6 +158,14 @@ fn seek(ctx: &mut Ctx<'_>, t: Micros) {
 }
 
 fn start_drag(ui: &egui::Ui, ctx: &mut Ctx<'_>, frame: &Frame, origin: Pos2) {
+    // the transition badges are buttons, not handles
+    if frame
+        .transition_badges(ctx.doc.project.timeline())
+        .iter()
+        .any(|(_, r)| r.contains(origin))
+    {
+        return;
+    }
     if origin.y <= frame.ruler.bottom() && origin.x >= frame.geo.lane_x0 {
         ctx.state.drag = Some(TimelineDrag::Playhead);
         return;
@@ -300,12 +317,17 @@ pub(super) fn drag_to(ctx: &mut Ctx<'_>, drag: TimelineDrag, frame: &Frame, pos:
                 ctx.state.snap_guide = guide;
             }
             // how far the edge may go left: not before the start of the file, and not before the start of the timeline
+            let media_len = orig
+                .media()
+                .and_then(|m| ctx.doc.project.asset(m))
+                .and_then(vz_core::MediaAsset::max_clip_duration);
+            let room = orig.room_before(media_len);
             let lowest = if main {
-                -orig.source_in
-            } else if orig.is_text() {
+                -room
+            } else if orig.media().is_none() {
                 -orig.start
             } else {
-                -orig.source_in.min(orig.start)
+                -room.min(orig.start)
             };
             let delta = delta.clamp(lowest, orig.duration - frame_len);
             let Some(now) = ctx.doc.project.timeline().clip(clip).cloned() else {
@@ -313,7 +335,7 @@ pub(super) fn drag_to(ctx: &mut Ctx<'_>, drag: TimelineDrag, frame: &Frame, pos:
             };
             // how much of the drag is already applied (the main track keeps its start; other tracks move it)
             let applied = if main {
-                now.source_in - orig.source_in
+                orig.duration - now.duration
             } else {
                 now.start - orig.start
             };
@@ -328,11 +350,11 @@ pub(super) fn drag_to(ctx: &mut Ctx<'_>, drag: TimelineDrag, frame: &Frame, pos:
             press_x,
             key,
         } => {
-            let limit = orig
-                .media()
-                .and_then(|m| ctx.doc.project.asset(m))
-                .and_then(vz_core::MediaAsset::max_clip_duration)
-                .map_or(Micros::MAX / 4, |len| len - orig.source_in);
+            let limit = orig.max_duration(
+                orig.media()
+                    .and_then(|m| ctx.doc.project.asset(m))
+                    .and_then(vz_core::MediaAsset::max_clip_duration),
+            );
             let mut target = orig.duration + geo.span(pos.x - press_x);
             let main = ctx
                 .doc

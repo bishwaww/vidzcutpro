@@ -84,6 +84,10 @@ impl MaxSize {
 
 /// How far ahead of the current frame we keep reading instead of seeking.
 const SEEK_THRESHOLD: Micros = 2_000_000;
+/// Going backwards (reverse playback) decodes a whole run of pictures at once and keeps them: seeking back for every
+/// single picture would be far too slow. The run stays under this many bytes, and is only made for short steps back.
+const BACK_CACHE_BYTES: usize = 160 * 1024 * 1024;
+const BACK_RANGE: Micros = 3_000_000;
 
 /// A colour converter and what it was built for, so it is rebuilt only when the picture format or size changes.
 struct CachedScaler {
@@ -112,6 +116,8 @@ pub struct VideoDecoder {
     lookahead: Option<Held>,
     reached_end: bool,
     cache: Option<Arc<VideoFrame>>,
+    /// A run of converted pictures in time order, filled when playing backwards.
+    back: Vec<(Micros, Arc<VideoFrame>)>,
 }
 
 impl VideoDecoder {
@@ -155,6 +161,7 @@ impl VideoDecoder {
             lookahead: None,
             reached_end: false,
             cache: None,
+            back: Vec::new(),
         })
     }
 
@@ -218,10 +225,56 @@ impl VideoDecoder {
         Ok(())
     }
 
+    /// The picture at `t` from the run kept for backward playback, if `t` is inside it (not at its very end).
+    fn cached_back(&self, t: Micros) -> Option<Arc<VideoFrame>> {
+        let (first, last) = (self.back.first()?, self.back.last()?);
+        if t < first.0 || t >= last.0 {
+            return None;
+        }
+        let i = self.back.partition_point(|(pts, _)| *pts <= t);
+        self.back.get(i.checked_sub(1)?).map(|(_, f)| f.clone())
+    }
+
+    /// Decode and keep the pictures from the keyframe before `t` up to `stop` (or until the memory limit).
+    fn fill_back(&mut self, t: Micros, stop: Micros) -> Result<()> {
+        self.seek(t)?;
+        self.back.clear();
+        let mut bytes = 0usize;
+        while let Some(f) = self.decode_next()? {
+            let pts = f.pts;
+            self.current = Some(f);
+            let converted = Arc::new(self.convert(pts)?);
+            bytes += converted.rgba.len();
+            self.back.push((pts, converted));
+            if pts >= stop || bytes >= BACK_CACHE_BYTES {
+                break;
+            }
+        }
+        Ok(())
+    }
+
     /// The picture showing at media time `t`: the last frame that started at or before `t`.
     /// Returns `None` only when the file has no pictures at all.
     pub fn frame_at(&mut self, t: Micros) -> Result<Option<Arc<VideoFrame>>> {
         let t = t.max(0);
+        if let Some(f) = self.cached_back(t) {
+            return Ok(Some(f));
+        }
+        // a small step backwards (reverse playback): decode the whole run once instead of seeking for every picture
+        let reference = match self.back.first() {
+            Some((first, _)) => Some(*first),
+            None => self.current.as_ref().map(|c| c.pts),
+        };
+        if let Some(reference) = reference
+            && t < reference
+            && reference - t <= BACK_RANGE
+        {
+            self.fill_back(t, reference)?;
+            if let Some(f) = self.cached_back(t) {
+                return Ok(Some(f));
+            }
+            // the run ended before it could cover `t` (the file's first pictures): fall through to the normal way
+        }
         let cached_ok = match (&self.current, &self.lookahead) {
             (Some(cur), next) => cur.pts <= t && next.as_ref().is_some_and(|n| n.pts > t),
             _ => false,

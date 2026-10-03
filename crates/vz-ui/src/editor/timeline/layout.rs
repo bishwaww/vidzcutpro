@@ -1,7 +1,7 @@
 //! Which track is drawn where. Tracks stack top to bottom like in other editors: overlay and text tracks
 //! on top (the newest highest), then the main track, then the audio tracks.
 
-use eframe::egui::{Pos2, Rect};
+use eframe::egui::{Pos2, Rect, Vec2};
 use vz_core::{Micros, Timeline, TrackFlags, TrackId, TrackKind, US_PER_SEC};
 
 pub const HEADER_W: f32 = 132.0;
@@ -119,6 +119,24 @@ impl Frame {
             Pos2::new(self.area.min.x, y),
             Pos2::new(self.geo.lane_x0, y + row.height),
         )
+    }
+
+    /// The little buttons drawn on cuts that have a transition: the clip each belongs to, and where it is.
+    pub fn transition_badges(&self, timeline: &Timeline) -> Vec<(vz_core::ClipId, Rect)> {
+        let mut out = Vec::new();
+        for row in &self.rows {
+            let Some(track) = timeline.track(row.track) else {
+                continue;
+            };
+            let rect = self.row_rect(row);
+            for tr in &track.transitions {
+                if let Some((_, a, _)) = track.transition_after(tr.after) {
+                    let c = Pos2::new(self.geo.x(a.end()), rect.center().y);
+                    out.push((a.id, Rect::from_center_size(c, Vec2::splat(22.0))));
+                }
+            }
+        }
+        out
     }
 
     /// The track row under a screen y (lanes and headers alike).

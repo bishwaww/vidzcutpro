@@ -11,6 +11,7 @@ pub mod ids;
 pub mod layer;
 pub mod media;
 pub mod project;
+pub mod speed;
 pub mod time;
 pub mod timeline;
 
@@ -24,11 +25,12 @@ pub use document::{
 };
 pub use edit::EditError;
 pub use ids::{ClipId, GroupId, LinkId, MarkerId, MediaId, TimelineId, TrackId};
-pub use layer::{BLACK, BlendMode, Color, Crop, PlacedTransform, Transform, WHITE};
+pub use layer::{AnimRef, BLACK, BlendMode, Color, Crop, PlacedTransform, Transform, WHITE};
 pub use media::{DEFAULT_IMAGE_DURATION, MediaAsset, MediaKind};
 pub use project::{AspectPreset, Background, Canvas, FORMAT_VERSION, LoadError, Project};
 pub use time::{FrameRate, Micros, US_PER_SEC};
 pub use timeline::{Clip, Layer, Marker, Timeline, Track, TrackKind};
+pub use timeline::{LayerTransition, Transition};
 
 /// Name of this crate, used in diagnostics.
 pub const CRATE: &str = "vz-core";

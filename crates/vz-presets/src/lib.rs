@@ -7,6 +7,10 @@ use vz_core::{
     BLACK, ShapeContent, ShapeKind, TextBackground, TextShadow, TextStroke, TextStyle, WHITE,
 };
 
+pub mod animation;
+pub mod speed;
+pub mod transition;
+
 /// Name of this crate, used in diagnostics.
 pub const CRATE: &str = "vz-presets";
 

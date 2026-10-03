@@ -139,7 +139,11 @@ impl Document {
         self.history.revision()
     }
 
-    fn run(&mut self, command: Command, merge: Option<MergeKey>) -> Result<(), DocError> {
+    pub(crate) fn run(
+        &mut self,
+        command: Command,
+        merge: Option<MergeKey>,
+    ) -> Result<(), DocError> {
         self.history.execute(&mut self.project, command, merge)?;
         Ok(())
     }
@@ -963,8 +967,10 @@ impl Document {
                     .and_then(|m| self.project.asset(m))
                     .and_then(MediaAsset::max_clip_duration);
                 let result = match (keep_right, track.kind.is_magnetic()) {
-                    (true, true) => edit::trim_left(&clips, *id, t - clip.start, rate),
-                    (true, false) => edit::free::trim_left(&clips, *id, t - clip.start, rate),
+                    (true, true) => edit::trim_left(&clips, *id, t - clip.start, media_len, rate),
+                    (true, false) => {
+                        edit::free::trim_left(&clips, *id, t - clip.start, media_len, rate)
+                    }
                     (false, true) => edit::trim_right(&clips, *id, t - clip.start, media_len, rate),
                     (false, false) => {
                         edit::free::trim_right(&clips, *id, t - clip.start, media_len, rate)
@@ -1057,11 +1063,18 @@ impl Document {
     ) -> Result<(), DocError> {
         let rate = self.project.frame_rate;
         let (track, kind) = self.kind_of(clip)?;
+        let media_len = self
+            .project
+            .timeline()
+            .clip(clip)
+            .and_then(|c| c.media())
+            .and_then(|m| self.project.asset(m))
+            .and_then(MediaAsset::max_clip_duration);
         self.edit_track(track, "Trim", merge, |t| {
             if kind.is_magnetic() {
-                edit::trim_left(&t.clips, clip, delta, rate)
+                edit::trim_left(&t.clips, clip, delta, media_len, rate)
             } else {
-                edit::free::trim_left(&t.clips, clip, delta, rate)
+                edit::free::trim_left(&t.clips, clip, delta, media_len, rate)
             }
         })
     }
@@ -1301,7 +1314,10 @@ impl Document {
 }
 
 mod clipboard;
+mod retime;
+mod transitions;
 pub use clipboard::ClipboardItem;
+pub use retime::{FREEZE_LENGTH, mean_speed};
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

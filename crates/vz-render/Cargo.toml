@@ -11,6 +11,7 @@ vz-anim = { path = "../vz-anim" }
 vz-media = { path = "../vz-media" }
 vz-text = { path = "../vz-text" }
 vz-vector = { path = "../vz-vector" }
+vz-presets = { path = "../vz-presets" }
 tracing.workspace = true
 rayon = "1"
 image = { workspace = true }

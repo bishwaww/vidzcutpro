@@ -8,12 +8,13 @@
 
 pub mod blend;
 pub mod composite;
+pub mod transition;
 
 use composite::{Image, Placement};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use vz_core::{Background, Clip, Content, MediaKind, Micros, Project};
+use vz_core::{Background, Clip, Content, MediaKind, Micros, Project, TrackId};
 use vz_media::{FrameSource, MaxSize, VideoFrame};
 use vz_text::{TextEngine, TextImage};
 use vz_vector::{ShapeCache, ShapeImage};
@@ -21,15 +22,106 @@ use vz_vector::{ShapeCache, ShapeImage};
 /// Name of this crate, used in diagnostics.
 pub const CRATE: &str = "vz-render";
 
+/// Which reader of a file: the track and whether it is the arriving side of a transition.
+type ReaderSlot = (TrackId, bool);
+
+struct OpenSource {
+    size: MaxSize,
+    source: FrameSource,
+    last_used: u64,
+}
+
+/// How many readers may stay open when they are not needed any more.
+const KEEP_OPEN: usize = 6;
+
 /// Draws frames. Keeps video files open between frames, because opening one is slow.
 #[derive(Default)]
 pub struct Renderer {
     /// Open files with the picture size they were opened for.
-    sources: HashMap<PathBuf, (MaxSize, FrameSource)>,
+    /// One reader per file and place on the timeline (track, and whether it is the arriving side of a transition):
+    /// clips that follow each other on a track share one, so playing across a cut stays smooth, while two clips of
+    /// the same file at the same time never fight over one reader.
+    sources: HashMap<(PathBuf, ReaderSlot), OpenSource>,
+    /// Counts rendered frames, to find readers that are no longer used.
+    frame_counter: u64,
     /// Files that could not be opened or decoded, so we do not retry (and log) on every frame.
     broken: HashMap<PathBuf, String>,
     text: TextEngine,
     shapes: ShapeCache,
+}
+
+/// One layer ready to be drawn.
+struct Drawn<'a> {
+    source: Source,
+    placement: Placement,
+    clip: &'a Clip,
+    opacity: f32,
+    crop: vz_core::Crop,
+    /// While a transition runs, the clip that is arriving.
+    incoming: Option<Box<Incoming<'a>>>,
+}
+
+struct Incoming<'a> {
+    layer: Drawn<'a>,
+    recipe: vz_presets::transition::Recipe,
+    /// Progress with the easing already applied.
+    progress: f32,
+}
+
+/// What a frame being drawn is about.
+struct Frame<'a> {
+    project: &'a Project,
+    t: Micros,
+    size: (u32, u32),
+    to_output: f32,
+    text_unit: f32,
+}
+
+/// Draw one layer onto the canvas.
+fn draw_layer(canvas: &mut VideoFrame, d: &Drawn<'_>) {
+    if d.crop.left + d.crop.right >= 1.0 || d.crop.top + d.crop.bottom >= 1.0 {
+        return; // wiped away completely
+    }
+    match &d.source {
+        Source::Frame(frame)
+            if is_plain(&d.placement, d.clip, d.opacity, &d.crop, canvas, frame) =>
+        {
+            paste_centered(canvas, frame);
+        }
+        _ => composite::draw(
+            canvas,
+            d.source.image(),
+            &d.placement,
+            d.crop,
+            d.opacity,
+            d.clip.blend,
+        ),
+    }
+}
+
+/// A softened copy of a picture (a gaussian blur of `sigma` pixels). Works on a smaller copy for speed.
+pub(crate) fn blurred(src: &Image<'_>, sigma: f32) -> VideoFrame {
+    use image::imageops::{FilterType, blur, resize};
+    let (w, h) = (src.width, src.height);
+    let k = (sigma / 4.0).floor().max(1.0) as u32;
+    let (sw, sh) = ((w / k).max(1), (h / k).max(1));
+    let Some(img) = image::RgbaImage::from_raw(w, h, src.rgba.to_vec()) else {
+        return VideoFrame {
+            width: w,
+            height: h,
+            rgba: src.rgba.to_vec(),
+            pts: 0,
+        };
+    };
+    let small = resize(&img, sw, sh, FilterType::Triangle);
+    let soft = blur(&small, (sigma / k as f32).max(0.3));
+    let big = resize(&soft, w, h, FilterType::Triangle);
+    VideoFrame {
+        width: w,
+        height: h,
+        rgba: big.into_raw(),
+        pts: 0,
+    }
 }
 
 /// What a layer draws.
@@ -89,73 +181,44 @@ impl Renderer {
         let (w, h) = size;
         let mut canvas = VideoFrame::black(w, h);
         canvas.pts = t;
-        // canvas pixels (what transforms are measured in) to output pixels
-        let to_output = w as f32 / project.canvas.width.max(1) as f32;
+        self.frame_counter += 1;
+        self.drop_unused_readers();
+        let frame = Frame {
+            project,
+            t,
+            size,
+            // canvas pixels (what transforms are measured in) to output pixels
+            to_output: w as f32 / project.canvas.width.max(1) as f32,
+            text_unit: vz_text::unit(project.canvas.width, project.canvas.height),
+        };
 
         // pictures first, so a blurred background can use the lowest one
-        let mut drawn: Vec<(Source, Placement, &Clip, f32)> = Vec::new();
-        let text_unit = vz_text::unit(project.canvas.width, project.canvas.height);
+        let mut drawn: Vec<Drawn> = Vec::new();
         for layer in project.timeline().layers_at(t) {
-            let clip = layer.clip;
-            let local = clip.local_time(t);
-            let transform = clip.transform.at(local);
-            let largest = transform.scale_x.abs().max(transform.scale_y.abs());
-            let bucket = decode_bucket(largest);
-            let (source, display) = match &clip.content {
-                Content::Media(media) => {
-                    let Some(asset) = project.asset(*media) else {
-                        continue;
-                    };
-                    if asset.kind == MediaKind::Audio {
-                        continue;
-                    }
-                    let Some(frame) = self.picture(&asset.path, layer.source_time, (w, h), bucket)
-                    else {
-                        continue;
-                    };
-                    let display = (
-                        frame.width as f32 / bucket as f32,
-                        frame.height as f32 / bucket as f32,
-                    );
-                    (Source::Frame(frame), display)
-                }
-                Content::Text(text) => {
-                    if text.text.trim().is_empty() {
-                        continue;
-                    }
-                    let image = self
-                        .text
-                        .render(text, text_unit * to_output * bucket as f32);
-                    let display = (
-                        image.width as f32 / bucket as f32,
-                        image.height as f32 / bucket as f32,
-                    );
-                    (Source::Text(image), display)
-                }
-                Content::Shape(shape) => {
-                    let image = self
-                        .shapes
-                        .render(shape, text_unit * to_output * bucket as f32);
-                    let display = (
-                        image.width as f32 / bucket as f32,
-                        image.height as f32 / bucket as f32,
-                    );
-                    (Source::Shape(image), display)
-                }
+            let Some(mut d) = self.layer_for(
+                &frame,
+                layer.clip,
+                layer.source_time,
+                (layer.track.id, false),
+            ) else {
+                continue;
             };
-            let placement = Placement {
-                center: (
-                    w as f32 / 2.0 + transform.x * to_output,
-                    h as f32 / 2.0 + transform.y * to_output,
-                ),
-                size: display,
-                scale: (transform.scale_x, transform.scale_y),
-                rotation: transform.rotation,
-                flip_h: transform.flip_h,
-                flip_v: transform.flip_v,
-            };
-            let opacity = clip.opacity.value_at(local);
-            drawn.push((source, placement, clip, opacity));
+            if let Some(tr) = layer.transition
+                && let Some(preset) = vz_presets::transition::find(tr.preset)
+                && let Some(incoming) = self.layer_for(
+                    &frame,
+                    tr.incoming,
+                    tr.incoming_source_time,
+                    (layer.track.id, true),
+                )
+            {
+                d.incoming = Some(Box::new(Incoming {
+                    layer: incoming,
+                    recipe: preset.recipe,
+                    progress: tr.easing.apply(tr.progress),
+                }));
+            }
+            drawn.push(d);
         }
 
         if let Background::Color(c) = project.background {
@@ -166,7 +229,7 @@ impl Renderer {
             }
         } else if let (Background::Blur(amount), Some(frame)) = (
             project.background,
-            drawn.iter().find_map(|(s, ..)| match s {
+            drawn.iter().find_map(|d| match &d.source {
                 Source::Frame(f) => Some(f),
                 Source::Text(_) | Source::Shape(_) => None,
             }),
@@ -174,28 +237,136 @@ impl Renderer {
             blurred_cover(&mut canvas, frame, amount);
         }
 
-        for (source, placement, clip, opacity) in &drawn {
-            match source {
-                Source::Frame(frame) if is_plain(placement, clip, *opacity, &canvas, frame) => {
-                    paste_centered(&mut canvas, frame);
+        for d in &drawn {
+            match &d.incoming {
+                None => draw_layer(&mut canvas, d),
+                Some(inc) => {
+                    // both clips are drawn over what is below, then blended
+                    let mut from = canvas.clone();
+                    draw_layer(&mut from, d);
+                    let mut to = canvas.clone();
+                    draw_layer(&mut to, &inc.layer);
+                    canvas = transition::blend(&from, &to, inc.progress, inc.recipe);
                 }
-                _ => composite::draw(
-                    &mut canvas,
-                    source.image(),
-                    placement,
-                    clip.crop.clamped(),
-                    *opacity,
-                    clip.blend,
-                ),
             }
         }
         Arc::new(canvas)
+    }
+
+    /// Close readers that have not been used for a while (a clip that was deleted or is far away on the timeline).
+    fn drop_unused_readers(&mut self) {
+        if self.sources.len() <= KEEP_OPEN {
+            return;
+        }
+        let now = self.frame_counter;
+        self.sources.retain(|_, open| now - open.last_used < 90);
+    }
+
+    /// Everything needed to draw one clip at the moment of `frame`: its picture, placement, opacity and crop
+    /// (with its own keyframes and ready-made animations applied). `None` if there is nothing to draw.
+    fn layer_for<'a>(
+        &mut self,
+        frame: &Frame<'_>,
+        clip: &'a Clip,
+        source_time: Micros,
+        slot: ReaderSlot,
+    ) -> Option<Drawn<'a>> {
+        let project = frame.project;
+        let (w, h) = frame.size;
+        let to_output = frame.to_output;
+        let text_unit = frame.text_unit;
+        let local = clip.local_time(frame.t);
+        let transform = clip.transform.at(local);
+        let largest = transform.scale_x.abs().max(transform.scale_y.abs());
+        let bucket = decode_bucket(largest);
+        let (source, display) = match &clip.content {
+            Content::Media(media) => {
+                let asset = project.asset(*media)?;
+                if asset.kind == MediaKind::Audio {
+                    return None;
+                }
+                // a transition can ask for a moment just past the end of the file: hold the last picture
+                let at = if asset.kind == MediaKind::Video && asset.duration > 1 {
+                    source_time.clamp(0, asset.duration - 1)
+                } else {
+                    source_time.max(0)
+                };
+                let picture = self.picture(&asset.path, slot, at, (w, h), bucket)?;
+                let display = (
+                    picture.width as f32 / bucket as f32,
+                    picture.height as f32 / bucket as f32,
+                );
+                (Source::Frame(picture), display)
+            }
+            Content::Text(text) => {
+                if text.text.trim().is_empty() {
+                    return None;
+                }
+                let image = self
+                    .text
+                    .render(text, text_unit * to_output * bucket as f32);
+                let display = (
+                    image.width as f32 / bucket as f32,
+                    image.height as f32 / bucket as f32,
+                );
+                (Source::Text(image), display)
+            }
+            Content::Shape(shape) => {
+                let image = self
+                    .shapes
+                    .render(shape, text_unit * to_output * bucket as f32);
+                let display = (
+                    image.width as f32 / bucket as f32,
+                    image.height as f32 / bucket as f32,
+                );
+                (Source::Shape(image), display)
+            }
+        };
+        let mut placement = Placement {
+            center: (
+                w as f32 / 2.0 + transform.x * to_output,
+                h as f32 / 2.0 + transform.y * to_output,
+            ),
+            size: display,
+            scale: (transform.scale_x, transform.scale_y),
+            rotation: transform.rotation,
+            flip_h: transform.flip_h,
+            flip_v: transform.flip_v,
+        };
+        let mut opacity = clip.opacity.value_at(local);
+        let mut crop = clip.crop.clamped();
+        let mut source = source;
+        // ready-made animations (in / out / combo) on top of the clip's own settings
+        let anim = vz_presets::animation::state_at(clip, local);
+        if !anim.is_neutral() {
+            placement.center.0 += anim.dx * w as f32;
+            placement.center.1 += anim.dy * h as f32;
+            placement.scale.0 *= anim.scale_x;
+            placement.scale.1 *= anim.scale_y;
+            placement.rotation += anim.rotation;
+            opacity *= anim.opacity;
+            crop.left = crop.left.max(anim.hide_left);
+            crop.right = crop.right.max(anim.hide_right);
+            if anim.blur > 0.05 {
+                let sigma = anim.blur * text_unit * to_output * bucket as f32;
+                source = Source::Frame(Arc::new(blurred(&source.image(), sigma)));
+            }
+        }
+        Some(Drawn {
+            source,
+            placement,
+            clip,
+            opacity,
+            crop,
+            incoming: None,
+        })
     }
 
     /// The picture of a media file at file time `at`, decoded for an output of `size`.
     fn picture(
         &mut self,
         path: &PathBuf,
+        slot: ReaderSlot,
         at: Micros,
         size: (u32, u32),
         bucket: u32,
@@ -204,11 +375,19 @@ impl Renderer {
             return None;
         }
         let wanted = MaxSize::fill_box(size.0 * bucket, size.1 * bucket);
+        let key = (path.clone(), slot);
         // (re)open when new, or when the picture size we need has changed
-        if !matches!(self.sources.get(path), Some((open_for, _)) if *open_for == wanted) {
+        if !matches!(self.sources.get(&key), Some(open) if open.size == wanted) {
             match FrameSource::open(path, wanted) {
                 Ok(source) => {
-                    self.sources.insert(path.clone(), (wanted, source));
+                    self.sources.insert(
+                        key.clone(),
+                        OpenSource {
+                            size: wanted,
+                            source,
+                            last_used: self.frame_counter,
+                        },
+                    );
                 }
                 Err(e) => {
                     tracing::warn!("cannot open {}: {e}", path.display());
@@ -217,8 +396,9 @@ impl Renderer {
                 }
             }
         }
-        let (_, source) = self.sources.get_mut(path)?;
-        match source.frame_at(at) {
+        let open = self.sources.get_mut(&key)?;
+        open.last_used = self.frame_counter;
+        match open.source.frame_at(at) {
             Ok(frame) => frame,
             Err(e) => {
                 tracing::warn!("cannot decode {}: {e}", path.display());
@@ -234,12 +414,17 @@ fn is_plain(
     p: &Placement,
     clip: &Clip,
     opacity: f32,
+    crop: &vz_core::Crop,
     canvas: &VideoFrame,
     frame: &VideoFrame,
 ) -> bool {
     clip.transform.is_identity()
+        && (p.center.0 - canvas.width as f32 / 2.0).abs() < 0.01
+        && (p.center.1 - canvas.height as f32 / 2.0).abs() < 0.01
+        && p.scale == (1.0, 1.0)
+        && p.rotation == 0.0
         && clip.blend == vz_core::BlendMode::Normal
-        && clip.crop.is_none()
+        && crop.is_none()
         && opacity >= 1.0
         && frame.width <= canvas.width
         && frame.height <= canvas.height

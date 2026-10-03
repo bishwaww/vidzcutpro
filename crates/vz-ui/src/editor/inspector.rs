@@ -18,6 +18,8 @@ pub enum Tab {
     Audio,
     Text,
     Shape,
+    Speed,
+    Animation,
     Details,
 }
 
@@ -28,6 +30,8 @@ impl Tab {
             Self::Audio => "Audio",
             Self::Text => "Text",
             Self::Shape => "Shape",
+            Self::Speed => "Speed",
+            Self::Animation => "Animation",
             Self::Details => "Details",
         }
     }
@@ -36,12 +40,23 @@ impl Tab {
 /// Which tabs make sense for a clip.
 fn tabs_for(ctx: &Ctx<'_>, clip: &Clip) -> Vec<Tab> {
     match &clip.content {
-        Content::Text(_) => vec![Tab::Text, Tab::Video, Tab::Details],
-        Content::Shape(_) => vec![Tab::Shape, Tab::Video, Tab::Details],
+        Content::Text(_) => vec![Tab::Text, Tab::Video, Tab::Animation, Tab::Details],
+        Content::Shape(_) => vec![Tab::Shape, Tab::Video, Tab::Animation, Tab::Details],
         Content::Media(m) => match ctx.doc.project.asset(*m).map(|a| (a.kind, a.has_audio)) {
-            Some((MediaKind::Audio, _)) => vec![Tab::Audio, Tab::Details],
-            Some((MediaKind::Video, true)) => vec![Tab::Video, Tab::Audio, Tab::Details],
-            _ => vec![Tab::Video, Tab::Details],
+            Some((MediaKind::Audio, _)) => vec![Tab::Audio, Tab::Speed, Tab::Details],
+            Some((MediaKind::Video, true)) => {
+                vec![
+                    Tab::Video,
+                    Tab::Audio,
+                    Tab::Speed,
+                    Tab::Animation,
+                    Tab::Details,
+                ]
+            }
+            Some((MediaKind::Video, false)) => {
+                vec![Tab::Video, Tab::Speed, Tab::Animation, Tab::Details]
+            }
+            _ => vec![Tab::Video, Tab::Animation, Tab::Details],
         },
     }
 }
@@ -89,7 +104,13 @@ pub fn show(ui: &mut egui::Ui, ctx: &mut Ctx<'_>) {
                 }
             }
             None => {
-                let resp = ui.label(RichText::new("Details").strong().color(theme::ACCENT));
+                let title =
+                    if ctx.state.selected_transition.is_some() && ctx.state.selection.is_empty() {
+                        "Transition"
+                    } else {
+                        "Details"
+                    };
+                let resp = ui.label(RichText::new(title).strong().color(theme::ACCENT));
                 ui.painter().hline(
                     resp.rect.x_range(),
                     resp.rect.bottom() + 3.0,
@@ -107,7 +128,10 @@ pub fn show(ui: &mut egui::Ui, ctx: &mut Ctx<'_>) {
             ui.spacing_mut().slider_width = 150.0;
             match (&selected, ctx.state.selection.len()) {
                 (Some(clip), _) => clip_tabs(ui, ctx, clip),
-                (None, 0) => project_details(ui, ctx),
+                (None, 0) => match ctx.state.selected_transition {
+                    Some(after) => transition::transition_section(ui, ctx, after),
+                    None => project_details(ui, ctx),
+                },
                 (None, n) => {
                     ui.label(RichText::new(format!("{n} clips selected")).strong());
                     ui.add_space(4.0);
@@ -132,8 +156,13 @@ fn section_title(ui: &mut egui::Ui, title: &str) {
     ui.add_space(2.0);
 }
 
+mod animation;
 mod shape;
+mod speed;
 mod text;
+mod transition;
+
+use super::keyframes::{self, Prop};
 
 use super::canvas::merge_key as key;
 
@@ -187,20 +216,22 @@ fn clip_tabs(ui: &mut egui::Ui, ctx: &mut Ctx<'_>, clip: &Clip) {
         Tab::Audio => audio_section(ui, ctx, clip),
         Tab::Text => text::text_section(ui, ctx, clip),
         Tab::Shape => shape::shape_section(ui, ctx, clip),
+        Tab::Speed => speed::speed_section(ui, ctx, clip),
+        Tab::Animation => animation::animation_section(ui, ctx, clip),
         Tab::Details => clip_details(ui, ctx, clip),
     }
 }
 
 fn transform_section(ui: &mut egui::Ui, ctx: &mut Ctx<'_>, clip: &Clip) {
     let id = clip.id;
-    let t = clip.transform.at(0);
     let canvas = ctx.doc.project.canvas;
     ui.horizontal(|ui| {
         section_title(ui, "Transform");
+        keyframe_nav(ui, ctx, clip, &Prop::TRANSFORM);
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if ui
                 .small_button("↺ Reset")
-                .on_hover_text("Put position, size and rotation back")
+                .on_hover_text("Put position, size and rotation back (removes their keyframes)")
                 .clicked()
             {
                 change(ctx, id, "Reset transform", |c| {
@@ -225,84 +256,77 @@ fn transform_section(ui: &mut egui::Ui, ctx: &mut Ctx<'_>, clip: &Clip) {
                     });
                 }
             });
+            let percent: Units = (|v| v * 100.0, |v| v / 100.0);
             if clip.transform.uniform_scale {
-                slider(
+                anim_slider(
                     ui,
                     ctx,
-                    id,
-                    "Scale",
+                    clip,
+                    &[Prop::ScaleX, Prop::ScaleY],
                     "",
-                    t.scale_x * 100.0,
                     1.0..=400.0,
                     " %",
                     0,
-                    |c, v| {
-                        c.transform.scale_x = (v / 100.0).into();
-                        c.transform.scale_y = (v / 100.0).into();
-                    },
+                    percent,
                 );
             } else {
-                slider(
+                anim_slider(
                     ui,
                     ctx,
-                    id,
-                    "Scale",
+                    clip,
+                    &[Prop::ScaleX],
                     "Width",
-                    t.scale_x * 100.0,
                     1.0..=400.0,
                     " %",
                     0,
-                    |c, v| c.transform.scale_x = (v / 100.0).into(),
+                    percent,
                 );
-                slider(
+                anim_slider(
                     ui,
                     ctx,
-                    id,
-                    "Scale",
+                    clip,
+                    &[Prop::ScaleY],
                     "Height",
-                    t.scale_y * 100.0,
                     1.0..=400.0,
                     " %",
                     0,
-                    |c, v| c.transform.scale_y = (v / 100.0).into(),
+                    percent,
                 );
             }
             let (half_w, half_h) = (canvas.width as f32, canvas.height as f32);
-            slider(
+            let same: Units = (|v| v, |v| v);
+            anim_slider(
                 ui,
                 ctx,
-                id,
-                "Position",
+                clip,
+                &[Prop::X],
                 "Position X",
-                t.x,
                 -half_w..=half_w,
                 " px",
                 0,
-                |c, v| c.transform.x = v.into(),
+                same,
             );
-            slider(
+            anim_slider(
                 ui,
                 ctx,
-                id,
-                "Position",
+                clip,
+                &[Prop::Y],
                 "Position Y",
-                t.y,
                 -half_h..=half_h,
                 " px",
                 0,
-                |c, v| c.transform.y = v.into(),
+                same,
             );
-            slider(
+            anim_slider(
                 ui,
                 ctx,
-                id,
+                clip,
+                &[Prop::Rotation],
                 "Rotation",
-                "Rotation",
-                t.rotation,
                 -180.0..=180.0,
                 "°",
                 0,
-                |c, v| c.transform.rotation = v.into(),
+                same,
             );
             row(ui, "Mirror", |ui| {
                 ui.horizontal(|ui| {
@@ -330,6 +354,168 @@ fn transform_section(ui: &mut egui::Ui, ctx: &mut Ctx<'_>, clip: &Clip) {
         });
 }
 
+/// The diamond that adds or removes a keyframe at the playhead for the given properties.
+fn diamond(ui: &mut egui::Ui, ctx: &mut Ctx<'_>, clip: &Clip, props: &[Prop]) {
+    let frame = ctx.doc.project.frame_rate.frame_start(1);
+    let tol = keyframes::tolerance(frame);
+    let local = keyframes::local_time(clip, ctx.state.playhead);
+    let on_clip = keyframes::playhead_on(clip, ctx.state.playhead);
+    let animated = props.iter().any(|p| keyframes::animated(clip, *p));
+    let keyed = props
+        .iter()
+        .all(|p| keyframes::has_key(clip, *p, local, tol))
+        && on_clip;
+    let (rect, resp) = ui.allocate_exact_size(vec2(18.0, 18.0), egui::Sense::click());
+    let c = rect.center();
+    let r = 6.0;
+    let shape = vec![
+        egui::pos2(c.x, c.y - r),
+        egui::pos2(c.x + r, c.y),
+        egui::pos2(c.x, c.y + r),
+        egui::pos2(c.x - r, c.y),
+    ];
+    let color = if !on_clip {
+        egui::Color32::from_rgb(70, 70, 70)
+    } else if animated || resp.hovered() {
+        theme::ACCENT
+    } else {
+        egui::Color32::from_rgb(120, 120, 120)
+    };
+    if keyed {
+        ui.painter().add(egui::Shape::convex_polygon(
+            shape,
+            color,
+            egui::Stroke::NONE,
+        ));
+    } else {
+        ui.painter().add(egui::Shape::closed_line(
+            shape,
+            egui::Stroke::new(1.5, color),
+        ));
+    }
+    let hint = if !on_clip {
+        "Move the playhead onto the clip to add keyframes"
+    } else if keyed {
+        "Remove the keyframe here"
+    } else {
+        "Add a keyframe here. Once a property has keyframes, changing it at another time adds more."
+    };
+    let resp = resp.on_hover_text(hint);
+    if resp.clicked() && on_clip {
+        let props = props.to_vec();
+        change(ctx, clip.id, "Keyframe", |c| {
+            keyframes::toggle_key(c, &props, local, tol)
+        });
+    }
+    resp.context_menu(|ui| {
+        if animated && ui.button("Stop animating (keep this value)").clicked() {
+            let props = props.to_vec();
+            change(ctx, clip.id, "Stop animating", |c| {
+                keyframes::clear_animation(c, &props, local)
+            });
+            ui.close();
+        }
+        let key_index = props[0].get(clip).key_at(local, tol);
+        if let (Some(i), true) = (key_index, on_clip) {
+            ui.menu_button("How it moves to the next keyframe", |ui| {
+                for easing in vz_anim::Easing::presets() {
+                    if ui.button(easing.label()).clicked() {
+                        let props = props.to_vec();
+                        change(ctx, clip.id, "Easing", |c| {
+                            for p in &props {
+                                p.get_mut(c).set_easing(i, easing);
+                            }
+                        });
+                        ui.close();
+                    }
+                }
+            });
+        }
+    });
+}
+
+/// "‹ ›" buttons that jump the playhead to the previous / next keyframe of the properties.
+fn keyframe_nav(ui: &mut egui::Ui, ctx: &mut Ctx<'_>, clip: &Clip, props: &[Prop]) {
+    let frame = ctx.doc.project.frame_rate.frame_start(1);
+    let tol = keyframes::tolerance(frame);
+    let local = keyframes::local_time(clip, ctx.state.playhead);
+    let prev = keyframes::neighbour(clip, props, local, tol, false);
+    let next = keyframes::neighbour(clip, props, local, tol, true);
+    if prev.is_none() && next.is_none() {
+        return;
+    }
+    let mut jump = None;
+    if ui
+        .add_enabled(prev.is_some(), egui::Button::new("‹").small())
+        .on_hover_text("Previous keyframe")
+        .clicked()
+    {
+        jump = prev;
+    }
+    if ui
+        .add_enabled(next.is_some(), egui::Button::new("›").small())
+        .on_hover_text("Next keyframe")
+        .clicked()
+    {
+        jump = next;
+    }
+    if let Some(t) = jump {
+        ctx.seek(clip.start + t);
+    }
+}
+
+/// How a property number is shown on its slider, and the way back.
+type Units = (fn(f32) -> f32, fn(f32) -> f32);
+
+/// A slider with a keyframe diamond for properties that can be animated. The first property gives the number
+/// shown; a change is written to all of them.
+#[allow(clippy::too_many_arguments)]
+fn anim_slider(
+    ui: &mut egui::Ui,
+    ctx: &mut Ctx<'_>,
+    clip: &Clip,
+    props: &[Prop],
+    label: &str,
+    range: std::ops::RangeInclusive<f32>,
+    suffix: &str,
+    decimals: usize,
+    (to_shown, from_shown): Units,
+) {
+    let id = clip.id;
+    let frame = ctx.doc.project.frame_rate.frame_start(1);
+    let tol = keyframes::tolerance(frame);
+    let local = keyframes::local_time(clip, ctx.state.playhead);
+    let on_clip = keyframes::playhead_on(clip, ctx.state.playhead);
+    let animated = props.iter().any(|p| keyframes::animated(clip, *p));
+    let shown = to_shown(props[0].get(clip).value_at(local));
+    row(ui, label, |ui| {
+        ui.horizontal(|ui| {
+            let mut v = shown;
+            let resp = ui.add_enabled(
+                on_clip || !animated,
+                egui::Slider::new(&mut v, range)
+                    .suffix(suffix)
+                    .max_decimals(decimals)
+                    .clamping(egui::SliderClamping::Never),
+            );
+            if resp.changed() {
+                let props = props.to_vec();
+                let value = from_shown(v);
+                let merge = key(id, props[0].name());
+                let _ = ctx.doc.update_clip(id, "Change", Some(merge), |c| {
+                    for p in &props {
+                        keyframes::write(c, *p, local, value, tol);
+                    }
+                });
+            }
+            if resp.drag_stopped() || resp.lost_focus() {
+                ctx.doc.seal_history();
+            }
+            diamond(ui, ctx, clip, props);
+        });
+    });
+}
+
 /// Left / centre / right and top / middle / bottom, plus fit and fill, in canvas terms.
 fn alignment_buttons(ui: &mut egui::Ui, ctx: &mut Ctx<'_>, clip: &Clip) {
     let id = clip.id;
@@ -338,6 +524,8 @@ fn alignment_buttons(ui: &mut egui::Ui, ctx: &mut Ctx<'_>, clip: &Clip) {
         return;
     };
     let (cw, ch) = (canvas.width as f32, canvas.height as f32);
+    let local = keyframes::local_time(clip, ctx.state.playhead);
+    let tol = keyframes::tolerance(ctx.doc.project.frame_rate.frame_start(1));
     let size = p.scaled_size();
     let small = |ui: &mut egui::Ui, text: &str| {
         ui.add(egui::Button::new(RichText::new(text).small()).small())
@@ -345,28 +533,32 @@ fn alignment_buttons(ui: &mut egui::Ui, ctx: &mut Ctx<'_>, clip: &Clip) {
     };
     if small(ui, "Left") {
         change(ctx, id, "Align", |c| {
-            c.transform.x = (-(cw - size.x) / 2.0).into()
+            keyframes::write(c, Prop::X, local, -(cw - size.x) / 2.0, tol)
         });
     }
     if small(ui, "Center") {
-        change(ctx, id, "Align", |c| c.transform.x = 0.0.into());
+        change(ctx, id, "Align", |c| {
+            keyframes::write(c, Prop::X, local, 0.0, tol)
+        });
     }
     if small(ui, "Right") {
         change(ctx, id, "Align", |c| {
-            c.transform.x = ((cw - size.x) / 2.0).into()
+            keyframes::write(c, Prop::X, local, (cw - size.x) / 2.0, tol)
         });
     }
     if small(ui, "Top") {
         change(ctx, id, "Align", |c| {
-            c.transform.y = (-(ch - size.y) / 2.0).into()
+            keyframes::write(c, Prop::Y, local, -(ch - size.y) / 2.0, tol)
         });
     }
     if small(ui, "Middle") {
-        change(ctx, id, "Align", |c| c.transform.y = 0.0.into());
+        change(ctx, id, "Align", |c| {
+            keyframes::write(c, Prop::Y, local, 0.0, tol)
+        });
     }
     if small(ui, "Bottom") {
         change(ctx, id, "Align", |c| {
-            c.transform.y = ((ch - size.y) / 2.0).into()
+            keyframes::write(c, Prop::Y, local, (ch - size.y) / 2.0, tol)
         });
     }
     if let Some(base) = base_size(&ctx.doc.project, clip) {
@@ -412,17 +604,16 @@ fn blend_section(ui: &mut egui::Ui, ctx: &mut Ctx<'_>, clip: &Clip) {
         .spacing(vec2(14.0, 8.0))
         .min_col_width(80.0)
         .show(ui, |ui| {
-            slider(
+            anim_slider(
                 ui,
                 ctx,
-                id,
+                clip,
+                &[Prop::Opacity],
                 "Opacity",
-                "Opacity",
-                clip.opacity.value_at(0) * 100.0,
                 0.0..=100.0,
                 " %",
                 0,
-                |c, v| c.opacity = (v / 100.0).into(),
+                (|v| v * 100.0, |v| v / 100.0),
             );
             row(ui, "Mode", |ui| {
                 egui::ComboBox::from_id_salt("blend_mode")
@@ -557,17 +748,16 @@ fn audio_section(ui: &mut egui::Ui, ctx: &mut Ctx<'_>, clip: &Clip) {
         .spacing(vec2(14.0, 8.0))
         .min_col_width(80.0)
         .show(ui, |ui| {
-            slider(
+            anim_slider(
                 ui,
                 ctx,
-                id,
+                clip,
+                &[Prop::Volume],
                 "Volume",
-                "Volume",
-                to_db(clip.volume.value_at(0)),
                 -60.0..=12.0,
                 " dB",
                 1,
-                |c, v| c.volume = from_db(v).into(),
+                (to_db, from_db),
             );
             slider(
                 ui,
@@ -639,7 +829,7 @@ fn clip_details(ui: &mut egui::Ui, ctx: &Ctx<'_>, clip: &Clip) {
                         RichText::new(format!(
                             "{} → {}",
                             tc(clip.source_in),
-                            tc(clip.source_in + clip.duration)
+                            tc(clip.source_in + clip.source_span())
                         ))
                         .monospace(),
                     );

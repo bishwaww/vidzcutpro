@@ -77,21 +77,21 @@ pub fn split(
     if at - clip.start < min || clip.end() - at < min {
         return Err(EditError::OutOfRange);
     }
+    let (left_in, right_in) = clip.split_sources(at - clip.start);
+    let has_media = clip.media().is_some();
     let left = Clip {
         duration: at - clip.start,
+        source_in: if has_media { left_in } else { 0 },
         ..clip.clone()
     };
-    let right = Clip {
+    let mut right = Clip {
         id: new_id,
         start: at,
-        source_in: if clip.is_text() {
-            0
-        } else {
-            clip.source_in + (at - clip.start)
-        },
+        source_in: if has_media { right_in } else { 0 },
         duration: clip.end() - at,
         ..clip.clone()
     };
+    right.shift_keys(-(at - clip.start));
     let mut out = clips.to_vec();
     out[i] = left;
     out.insert(i + 1, right);
@@ -116,15 +116,12 @@ pub fn trim_left(
     clips: &[Clip],
     id: ClipId,
     delta: Micros,
+    media_len: Option<Micros>,
     rate: FrameRate,
 ) -> Result<Vec<Clip>, EditError> {
     let i = position(clips, id)?;
     let delta = rate.snap(delta.abs()) * delta.signum();
     let c = &clips[i];
-    let text = c.is_text();
-    if !text && c.source_in + delta < 0 {
-        return Err(EditError::BeyondMedia);
-    }
     if c.duration - delta < min_duration(rate) {
         return Err(EditError::TooShort);
     }
@@ -133,11 +130,8 @@ pub fn trim_left(
         return Err(EditError::Overlap);
     }
     let mut out = clips.to_vec();
+    out[i] = c.trimmed_left(delta, media_len)?;
     out[i].start = new_start;
-    out[i].duration -= delta;
-    if !text {
-        out[i].source_in += delta;
-    }
     Ok(sorted(out))
 }
 
@@ -154,9 +148,6 @@ pub fn trim_right(
     if new_duration < min_duration(rate) {
         return Err(EditError::TooShort);
     }
-    if media_len.is_some_and(|len| clips[i].source_in + new_duration > len) {
-        return Err(EditError::BeyondMedia);
-    }
     if overlaps(
         clips,
         clips[i].start,
@@ -166,7 +157,7 @@ pub fn trim_right(
         return Err(EditError::Overlap);
     }
     let mut out = clips.to_vec();
-    out[i].duration = new_duration;
+    out[i] = clips[i].with_duration(new_duration, media_len)?;
     Ok(out)
 }
 
@@ -277,14 +268,14 @@ mod tests {
     #[test]
     fn trimming_the_left_edge_moves_the_start_but_not_the_end() {
         let c = clip(4, 4); // 4..8, source_in 10 s
-        let out = trim_left(std::slice::from_ref(&c), c.id, US_PER_SEC, RATE).unwrap();
+        let out = trim_left(std::slice::from_ref(&c), c.id, US_PER_SEC, None, RATE).unwrap();
         assert_eq!(
             (out[0].start, out[0].end()),
             (5 * US_PER_SEC, 8 * US_PER_SEC)
         );
         assert_eq!(out[0].source_in, c.source_in + US_PER_SEC);
         // reveal more: starts earlier, shows earlier footage
-        let out = trim_left(std::slice::from_ref(&c), c.id, -US_PER_SEC, RATE).unwrap();
+        let out = trim_left(std::slice::from_ref(&c), c.id, -US_PER_SEC, None, RATE).unwrap();
         assert_eq!(
             (out[0].start, out[0].source_in),
             (3 * US_PER_SEC, c.source_in - US_PER_SEC)
@@ -296,14 +287,14 @@ mod tests {
         let (a, b) = (clip(0, 3), clip(4, 3));
         let clips = vec![a, b.clone()];
         assert_eq!(
-            trim_left(&clips, b.id, -2 * US_PER_SEC, RATE),
+            trim_left(&clips, b.id, -2 * US_PER_SEC, None, RATE),
             Err(EditError::Overlap)
         );
-        assert!(trim_left(&clips, b.id, -US_PER_SEC, RATE).is_ok());
+        assert!(trim_left(&clips, b.id, -US_PER_SEC, None, RATE).is_ok());
         let mut early = clip(4, 3);
         early.source_in = US_PER_SEC / 2;
         assert_eq!(
-            trim_left(&[early.clone()], early.id, -US_PER_SEC, RATE),
+            trim_left(&[early.clone()], early.id, -US_PER_SEC, None, RATE),
             Err(EditError::BeyondMedia)
         );
         assert_eq!(
@@ -320,9 +311,33 @@ mod tests {
             US_PER_SEC,
             2 * US_PER_SEC,
         );
-        let out = trim_left(std::slice::from_ref(&t), t.id, -US_PER_SEC, RATE).unwrap();
+        let out = trim_left(std::slice::from_ref(&t), t.id, -US_PER_SEC, None, RATE).unwrap();
         assert_eq!((out[0].start, out[0].source_in), (0, 0));
         let out = trim_right(std::slice::from_ref(&t), t.id, 600 * US_PER_SEC, None, RATE).unwrap();
         assert_eq!(out[0].duration, 600 * US_PER_SEC);
+    }
+}
+
+#[cfg(test)]
+mod key_tests {
+    use super::*;
+    use crate::content::TextContent;
+    use crate::time::{FrameRate, US_PER_SEC};
+
+    #[test]
+    fn keyframes_stay_on_the_same_picture_when_a_clip_is_cut_or_trimmed() {
+        let mut c = Clip::text_clip(TextContent::new("t"), 0, 4 * US_PER_SEC);
+        c.transform.x.set_key(0, 0.0, 0);
+        c.transform.x.set_key(3 * US_PER_SEC, 90.0, 0);
+        let rate = FrameRate::FPS_25;
+        // cut at 2 s: the second half starts at its own time 0, and its key (the one at 3 s) is now at 1 s
+        let new_id = ClipId::new();
+        let out = split(std::slice::from_ref(&c), c.id, 2 * US_PER_SEC, rate, new_id).unwrap();
+        let right = &out[1];
+        assert_eq!(right.transform.x.keys().last().unwrap().time, US_PER_SEC);
+        // the picture at 2 s had x = 60 (two thirds of the way to 90); the second half starts with exactly that
+        assert!((right.transform.x.value_at(0) - 60.0).abs() < 0.01);
+        // the first half keeps its keys
+        assert_eq!(out[0].transform.x.keys().len(), 2);
     }
 }

@@ -155,7 +155,14 @@ fn toolbar(ui: &mut egui::Ui, ctx: &mut Ctx<'_>) {
         ) {
             toggle_marker(ctx);
         }
-        tool(ui, "Freeze", false, COMING_SOON);
+        if tool(
+            ui,
+            "Freeze",
+            freeze_target(ctx).is_some(),
+            "Insert a still picture of the moment under the playhead (3 s)",
+        ) {
+            freeze_at_playhead(ctx);
+        }
         ui.menu_button(RichText::new("+ Track").small(), |ui| {
             for (kind, label) in [
                 (TrackKind::Overlay, "Overlay track"),
@@ -229,6 +236,29 @@ pub fn targets_at_playhead(ctx: &Ctx<'_>) -> Vec<ClipId> {
         .map(|c| c.id)
         .into_iter()
         .collect()
+}
+
+/// The clip a freeze frame at the playhead would be made from: a picture clip under the playhead.
+fn freeze_target(ctx: &Ctx<'_>) -> Option<ClipId> {
+    let tl = ctx.doc.project.timeline();
+    targets_at_playhead(ctx).into_iter().find(|id| {
+        tl.clip(*id).is_some_and(|c| c.media().is_some())
+            && tl.track_of(*id).is_some_and(|t| t.kind != TrackKind::Audio)
+    })
+}
+
+/// Cut the clip at the playhead and insert a still picture of that moment (3 seconds).
+pub fn freeze_at_playhead(ctx: &mut Ctx<'_>) {
+    let Some(clip) = freeze_target(ctx) else {
+        return;
+    };
+    match ctx
+        .doc
+        .freeze_frame(clip, ctx.state.playhead, vz_core::document::FREEZE_LENGTH)
+    {
+        Ok(still) => ctx.state.selection = vec![still],
+        Err(e) => ctx.state.say(format!("Could not freeze: {e}")),
+    }
 }
 
 pub fn split_at_playhead(ctx: &mut Ctx<'_>) {
@@ -308,6 +338,10 @@ pub fn toggle_marker(ctx: &mut Ctx<'_>) {
 
 pub fn delete_selection(ctx: &mut Ctx<'_>) {
     if ctx.state.selection.is_empty() {
+        // with only a transition selected, Delete takes it away
+        if let Some(after) = ctx.state.selected_transition.take() {
+            let _ = ctx.doc.set_transition(after, None, None);
+        }
         return;
     }
     let ids = ctx.state.selection.clone();

@@ -4,11 +4,13 @@ mod assets;
 mod canvas;
 mod geometry;
 mod inspector;
+mod keyframes;
 mod player;
 mod sticker_panel;
 mod text_panel;
 mod timeline;
 mod topbar;
+mod transition_panel;
 
 use crate::settings::{LayoutPreset, UiSettings};
 use crate::theme;
@@ -44,6 +46,8 @@ pub struct EditorState {
     pub selection: Vec<ClipId>,
     /// Which tab of the inspector is open for a selected clip.
     pub inspector_tab: inspector::Tab,
+    /// Which kind of animation the Animation tab is showing.
+    pub anim_kind: vz_presets::animation::AnimKind,
     /// What the mouse is doing on the picture in the player.
     pub canvas_drag: Option<canvas::CanvasDrag>,
     /// Guide lines to draw while a layer is being moved.
@@ -54,6 +58,12 @@ pub struct EditorState {
     pub fonts: Vec<String>,
     /// Put the cursor in the inspector's text box on the next frame.
     pub focus_text: bool,
+    /// The Speed tab shows the curve editor (also when the speed has no curve yet).
+    pub speed_curve_mode: bool,
+    /// The transition being edited, named by the clip it follows.
+    pub selected_transition: Option<ClipId>,
+    /// The transition tile the mouse was on (its preview is playing).
+    pub tile_hover: Option<String>,
     /// Clips copied with Ctrl+C or Ctrl+X.
     pub clipboard: Vec<vz_core::ClipboardItem>,
     /// Pictures of the text styles on the Text tab.
@@ -82,12 +92,16 @@ impl Default for EditorState {
             playing: false,
             selection: Vec::new(),
             inspector_tab: inspector::Tab::default(),
+            anim_kind: vz_presets::animation::AnimKind::In,
             canvas_drag: None,
             guides: Vec::new(),
             show_thirds: false,
             show_safe: false,
             fonts: Vec::new(),
             focus_text: false,
+            speed_curve_mode: false,
+            selected_transition: None,
+            tile_hover: None,
             clipboard: Vec::new(),
             preset_tiles: HashMap::new(),
             drag: None,

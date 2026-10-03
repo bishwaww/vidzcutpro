@@ -66,6 +66,12 @@ pub enum Command {
         before: Vec<Marker>,
         after: Vec<Marker>,
     },
+    /// Replace the transitions of a track.
+    SetTransitions {
+        track: TrackId,
+        before: Vec<crate::timeline::Transition>,
+        after: Vec<crate::timeline::Transition>,
+    },
     SetBackground {
         before: Background,
         after: Background,
@@ -119,6 +125,7 @@ impl Command {
             Self::RemoveTrack { .. } => "Remove track",
             Self::SetTrackFlags { .. } => "Change track",
             Self::SetMarkers { .. } => "Change markers",
+            Self::SetTransitions { .. } => "Change transition",
             Self::SetBackground { .. } => "Change background",
             Self::RelinkMedia { .. } => "Relink media",
             Self::Rename { .. } => "Rename project",
@@ -173,6 +180,13 @@ impl Command {
                 (t.locked, t.hidden, t.muted) = (after.locked, after.hidden, after.muted);
             }
             Self::SetMarkers { after, .. } => project.timeline_mut().markers = after.clone(),
+            Self::SetTransitions { track, after, .. } => {
+                project
+                    .timeline_mut()
+                    .track_mut(*track)
+                    .ok_or(EditError::TrackNotFound(*track))?
+                    .transitions = after.clone();
+            }
             Self::SetBackground { after, .. } => project.background = *after,
             Self::RelinkMedia { id, after, .. } => {
                 let asset = project
@@ -228,6 +242,11 @@ impl Command {
                 }
             }
             Self::SetMarkers { before, .. } => project.timeline_mut().markers = before.clone(),
+            Self::SetTransitions { track, before, .. } => {
+                if let Some(t) = project.timeline_mut().track_mut(*track) {
+                    t.transitions = before.clone();
+                }
+            }
             Self::SetBackground { before, .. } => project.background = *before,
             Self::RelinkMedia { id, before, .. } => {
                 if let Some(asset) = project.media.iter_mut().find(|m| m.id == *id) {
@@ -266,6 +285,17 @@ impl Command {
                     id: id2, after: a2, ..
                 },
             ) if id == id2 => {
+                *after = a2.clone();
+                true
+            }
+            (
+                Self::SetTransitions { track, after, .. },
+                Self::SetTransitions {
+                    track: t2,
+                    after: a2,
+                    ..
+                },
+            ) if track == t2 => {
                 *after = a2.clone();
                 true
             }

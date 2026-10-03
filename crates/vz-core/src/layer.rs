@@ -247,3 +247,11 @@ mod tests {
         assert!(t.is_identity());
     }
 }
+
+/// A ready-made animation chosen for a clip (see `vz-presets`): which preset and how long it takes.
+/// For "combo" (looping) animations `duration` is the length of one cycle.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct AnimRef {
+    pub preset: String,
+    pub duration: crate::time::Micros,
+}

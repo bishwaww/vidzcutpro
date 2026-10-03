@@ -2,6 +2,7 @@
 //! so what you hear is what you export.
 
 use crate::reader::AudioReader;
+use crate::retime::Retimer;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use vz_core::{Clip, MediaKind, Micros, Project};
@@ -19,6 +20,8 @@ pub fn samples_to_micros(samples: i64, rate: u32) -> Micros {
 pub struct Mixer {
     rate: u32,
     readers: HashMap<PathBuf, AudioReader>,
+    /// Sound makers for clips whose speed is not plain (one per clip, they remember where they were).
+    retimers: HashMap<vz_core::ClipId, Retimer>,
     /// Files whose sound could not be read; logged once, then treated as silent.
     broken: HashSet<PathBuf>,
     scratch: Vec<f32>,
@@ -29,6 +32,7 @@ impl Mixer {
         Self {
             rate,
             readers: HashMap::new(),
+            retimers: HashMap::new(),
             broken: HashSet::new(),
             scratch: Vec::new(),
         }
@@ -49,6 +53,15 @@ impl Mixer {
     ) {
         out.clear();
         out.resize(frames * 2, 0.0);
+        if self.retimers.len() > 16 {
+            let alive: std::collections::HashSet<_> = project
+                .timeline()
+                .tracks
+                .iter()
+                .flat_map(|t| t.clips.iter().map(|c| c.id))
+                .collect();
+            self.retimers.retain(|id, _| alive.contains(id));
+        }
         let end_sample = start_sample + frames as i64;
 
         for track in &project.timeline().tracks {
@@ -84,11 +97,23 @@ impl Mixer {
                         }
                     }
                 }
-                let file_start = micros_to_samples(clip.source_in, self.rate) + (from - clip_start);
                 let n = (to - from) as usize;
                 self.scratch.resize(n * 2, 0.0);
                 let reader = self.readers.get_mut(&asset.path).expect("opened above");
-                if let Err(e) = reader.read(file_start, &mut self.scratch) {
+                let result = if clip.is_retimed() {
+                    self.retimers.entry(clip.id).or_default().render(
+                        reader,
+                        clip,
+                        self.rate,
+                        from - clip_start,
+                        &mut self.scratch,
+                    )
+                } else {
+                    let file_start =
+                        micros_to_samples(clip.source_in, self.rate) + (from - clip_start);
+                    reader.read(file_start, &mut self.scratch)
+                };
+                if let Err(e) = result {
                     tracing::warn!("sound read error in {}: {e}", asset.path.display());
                     self.readers.remove(&asset.path);
                     self.broken.insert(asset.path.clone());

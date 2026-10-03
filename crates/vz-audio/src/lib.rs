@@ -7,6 +7,7 @@
 pub mod engine;
 pub mod mixer;
 pub mod reader;
+pub mod retime;
 pub mod waveform;
 
 pub use engine::AudioEngine;
@@ -321,5 +322,71 @@ mod tests {
         doc.place_media_new_track(media, 0).unwrap(); // the same sound again on an audio track
         let doubled = loudness(&doc, 0, US_PER_SEC);
         assert!(doubled > sound * 1.5, "{doubled} vs {sound}");
+    }
+
+    fn mixed(doc: &Document, from: i64, frames: usize) -> Vec<f32> {
+        let mut mixer = Mixer::new(RATE);
+        let mut out = Vec::new();
+        mixer.render(&doc.project, from, frames, &mut out);
+        out
+    }
+
+    #[test]
+    fn a_sped_up_clip_sounds_shorter_and_keeps_or_changes_its_pitch() {
+        let path = testutil::standard(); // a 4 s, 440 Hz tone
+        let mut doc = doc_with(&path);
+        let id = doc.project.timeline().main_track().clips[0].id;
+        doc.set_speed(id, 2.0, None).unwrap();
+        assert_eq!(
+            doc.project.timeline().clip(id).unwrap().duration,
+            2 * US_PER_SEC
+        );
+        // sound for the first 1.5 seconds, and silence after the clip's end
+        let inside = mixed(&doc, 12_000, 48_000);
+        assert!(rms(&inside) > 0.05);
+        assert!(
+            (pitch_hz(&inside) - 440.0).abs() < 40.0,
+            "{}",
+            pitch_hz(&inside)
+        );
+        let after = mixed(&doc, 3 * 48_000, 4800);
+        assert_eq!(rms(&after), 0.0);
+        // without "keep pitch" the note goes up an octave
+        doc.set_keep_pitch(id, false).unwrap();
+        let tape = mixed(&doc, 12_000, 48_000);
+        assert!(
+            (pitch_hz(&tape) - 880.0).abs() < 40.0,
+            "{}",
+            pitch_hz(&tape)
+        );
+    }
+
+    #[test]
+    fn a_freeze_frame_and_a_muted_track_make_no_sound() {
+        let path = testutil::standard();
+        let mut doc = doc_with(&path);
+        let id = doc.project.timeline().main_track().clips[0].id;
+        let still = doc
+            .freeze_frame(id, 2 * US_PER_SEC, 2 * US_PER_SEC)
+            .unwrap();
+        let c = doc.project.timeline().clip(still).unwrap().clone();
+        let start = micros_to_samples(c.start, RATE);
+        assert_eq!(rms(&mixed(&doc, start + 1000, 20_000)), 0.0);
+        // the parts around it still play
+        assert!(rms(&mixed(&doc, 0, 20_000)) > 0.05);
+        let end = micros_to_samples(c.end(), RATE);
+        assert!(rms(&mixed(&doc, end + 1000, 20_000)) > 0.05);
+    }
+
+    #[test]
+    fn a_reversed_clip_still_plays_the_whole_tone() {
+        let path = testutil::standard();
+        let mut doc = doc_with(&path);
+        let id = doc.project.timeline().main_track().clips[0].id;
+        let normal = rms(&mixed(&doc, 0, 4 * 48_000));
+        doc.set_reverse(id, true).unwrap();
+        let backwards = mixed(&doc, 0, 4 * 48_000);
+        assert!((rms(&backwards) - normal).abs() < normal * 0.1);
+        assert!((pitch_hz(&backwards) - 440.0).abs() < 20.0);
     }
 }

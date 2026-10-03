@@ -291,4 +291,28 @@ mod tests {
             "expected about (224, 128, 48), got ({r}, {g}, {b})"
         );
     }
+
+    #[test]
+    fn going_backwards_gives_the_same_pictures_as_going_forwards() {
+        let path = testutil::standard();
+        let size = MaxSize::new(160, 90);
+        let times: Vec<i64> = (0..75).map(|i| i * 40_000).collect();
+        let mut forward = VideoDecoder::open(&path, size).unwrap();
+        let expected: Vec<Vec<u8>> = times
+            .iter()
+            .map(|t| forward.frame_at(*t).unwrap().unwrap().rgba.clone())
+            .collect();
+        let mut backward = VideoDecoder::open(&path, size).unwrap();
+        let started = std::time::Instant::now();
+        for (i, t) in times.iter().enumerate().rev() {
+            let frame = backward.frame_at(*t).unwrap().unwrap();
+            assert_eq!(frame.rgba, expected[i], "picture at {t} differs");
+        }
+        // a run of pictures is decoded once, not seeked for every step
+        assert!(
+            started.elapsed().as_secs_f32() < 5.0,
+            "{:?}",
+            started.elapsed()
+        );
+    }
 }
