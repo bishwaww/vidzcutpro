@@ -19,6 +19,8 @@ pub enum Tab {
     Text,
     Shape,
     Speed,
+    Adjust,
+    Effects,
     Animation,
     Details,
 }
@@ -31,6 +33,8 @@ impl Tab {
             Self::Text => "Text",
             Self::Shape => "Shape",
             Self::Speed => "Speed",
+            Self::Adjust => "Adjust",
+            Self::Effects => "Effects",
             Self::Animation => "Animation",
             Self::Details => "Details",
         }
@@ -40,8 +44,23 @@ impl Tab {
 /// Which tabs make sense for a clip.
 fn tabs_for(ctx: &Ctx<'_>, clip: &Clip) -> Vec<Tab> {
     match &clip.content {
-        Content::Text(_) => vec![Tab::Text, Tab::Video, Tab::Animation, Tab::Details],
-        Content::Shape(_) => vec![Tab::Shape, Tab::Video, Tab::Animation, Tab::Details],
+        Content::Text(_) => vec![
+            Tab::Text,
+            Tab::Video,
+            Tab::Adjust,
+            Tab::Effects,
+            Tab::Animation,
+            Tab::Details,
+        ],
+        Content::Shape(_) => vec![
+            Tab::Shape,
+            Tab::Video,
+            Tab::Adjust,
+            Tab::Effects,
+            Tab::Animation,
+            Tab::Details,
+        ],
+        Content::Adjustment => vec![Tab::Adjust, Tab::Effects, Tab::Details],
         Content::Media(m) => match ctx.doc.project.asset(*m).map(|a| (a.kind, a.has_audio)) {
             Some((MediaKind::Audio, _)) => vec![Tab::Audio, Tab::Speed, Tab::Details],
             Some((MediaKind::Video, true)) => {
@@ -49,14 +68,29 @@ fn tabs_for(ctx: &Ctx<'_>, clip: &Clip) -> Vec<Tab> {
                     Tab::Video,
                     Tab::Audio,
                     Tab::Speed,
+                    Tab::Adjust,
+                    Tab::Effects,
                     Tab::Animation,
                     Tab::Details,
                 ]
             }
             Some((MediaKind::Video, false)) => {
-                vec![Tab::Video, Tab::Speed, Tab::Animation, Tab::Details]
+                vec![
+                    Tab::Video,
+                    Tab::Speed,
+                    Tab::Adjust,
+                    Tab::Effects,
+                    Tab::Animation,
+                    Tab::Details,
+                ]
             }
-            _ => vec![Tab::Video, Tab::Animation, Tab::Details],
+            _ => vec![
+                Tab::Video,
+                Tab::Adjust,
+                Tab::Effects,
+                Tab::Animation,
+                Tab::Details,
+            ],
         },
     }
 }
@@ -156,7 +190,10 @@ fn section_title(ui: &mut egui::Ui, title: &str) {
     ui.add_space(2.0);
 }
 
+mod adjust;
+pub use adjust::Part as AdjustPart;
 mod animation;
+mod looks;
 mod shape;
 mod speed;
 mod text;
@@ -212,11 +249,23 @@ fn clip_tabs(ui: &mut egui::Ui, ctx: &mut Ctx<'_>, clip: &Clip) {
             transform_section(ui, ctx, clip);
             blend_section(ui, ctx, clip);
             crop_section(ui, ctx, clip);
+            ui.add_space(6.0);
+            looks::mask_section(ui, ctx, clip);
+            ui.add_space(6.0);
+            looks::chroma_section(ui, ctx, clip);
         }
         Tab::Audio => audio_section(ui, ctx, clip),
         Tab::Text => text::text_section(ui, ctx, clip),
         Tab::Shape => shape::shape_section(ui, ctx, clip),
         Tab::Speed => speed::speed_section(ui, ctx, clip),
+        Tab::Adjust => adjust::adjust_section(ui, ctx, clip),
+        Tab::Effects => {
+            looks::effects_section(ui, ctx, clip);
+            if clip.is_adjustment() {
+                ui.add_space(8.0);
+                looks::mask_section(ui, ctx, clip);
+            }
+        }
         Tab::Animation => animation::animation_section(ui, ctx, clip),
         Tab::Details => clip_details(ui, ctx, clip),
     }
@@ -802,6 +851,7 @@ fn clip_details(ui: &mut egui::Ui, ctx: &Ctx<'_>, clip: &Clip) {
             .map_or("?".to_string(), |a| a.name.clone()),
         Content::Text(t) => t.text.lines().next().unwrap_or("").to_string(),
         Content::Shape(s) => s.kind.label().to_string(),
+        Content::Adjustment => "Adjustment layer".to_string(),
     };
     section_title(ui, "Selected clip");
     let tc = |t: Micros| rate.timecode(t);

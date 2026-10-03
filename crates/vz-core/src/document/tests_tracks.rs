@@ -1059,3 +1059,104 @@ fn a_freeze_at_the_very_start_or_on_text_is_refused() {
         .unwrap();
     assert!(doc.freeze_frame(text, US_PER_SEC / 2, US_PER_SEC).is_err());
 }
+
+#[test]
+fn adjustment_layers_go_on_effect_tracks_and_only_there() {
+    use crate::grade::{Adjust, EffectRef};
+    let mut doc = Document::new(Project::new("t"));
+    let fx = EffectRef {
+        preset: "blur".into(),
+        params: vec![50.0],
+        enabled: true,
+    };
+    let (track, first) = doc
+        .add_adjustment_auto(0, 3 * US_PER_SEC, Adjust::default(), vec![fx.clone()])
+        .unwrap();
+    assert_eq!(
+        doc.project.timeline().track(track).unwrap().kind,
+        TrackKind::Effect
+    );
+    // busy at the same time: a second effect track; later: the first one again
+    let (second, _) = doc
+        .add_adjustment_auto(US_PER_SEC, US_PER_SEC, Adjust::default(), vec![fx.clone()])
+        .unwrap();
+    assert_ne!(second, track);
+    let (third, _) = doc
+        .add_adjustment_auto(5 * US_PER_SEC, US_PER_SEC, Adjust::default(), vec![])
+        .unwrap();
+    assert_eq!(third, track);
+    let clip = doc.project.timeline().clip(first).unwrap().clone();
+    assert!(clip.is_adjustment() && clip.effects == vec![fx]);
+    assert!(track_accepts(&doc.project, TrackKind::Effect, &clip));
+    assert!(!track_accepts(&doc.project, TrackKind::Overlay, &clip));
+    assert!(!track_accepts(&doc.project, TrackKind::Main, &clip));
+    // the layer does not draw a picture of its own
+    assert!(doc.project.asset_kind(&clip.content).is_none());
+}
+
+#[test]
+fn several_clips_can_be_changed_in_one_undo_step() {
+    let mut doc = Document::new(Project::new("t"));
+    let v = doc.import_media(asset("v", MediaKind::Video, 4)).unwrap();
+    let a = doc.add_clip(v, 0).unwrap();
+    let b = doc.add_clip(v, 1).unwrap();
+    doc.update_clips(&[a, b], "Look", |c| c.adjust.saturation = 40.0)
+        .unwrap();
+    for id in [a, b] {
+        assert_eq!(
+            doc.project.timeline().clip(id).unwrap().adjust.saturation,
+            40.0
+        );
+    }
+    assert!(doc.undo());
+    for id in [a, b] {
+        assert_eq!(
+            doc.project.timeline().clip(id).unwrap().adjust.saturation,
+            0.0
+        );
+    }
+    // changing nothing makes no undo step
+    doc.update_clips(&[a], "None", |_| {}).unwrap();
+    assert!(doc.undo(), "this undoes the import, not a phantom edit");
+}
+
+#[test]
+fn old_clips_without_the_new_look_settings_still_load() {
+    let (doc, id) = doc_with_one_clip(4);
+    let clip = doc.project.timeline().clip(id).unwrap();
+    let mut json: serde_json::Value = serde_json::to_value(clip).unwrap();
+    for key in ["adjust", "effects", "masks", "chroma"] {
+        json.as_object_mut().unwrap().remove(key);
+    }
+    let back: Clip = serde_json::from_value(json).unwrap();
+    assert!(
+        back.adjust.is_identity()
+            && back.effects.is_empty()
+            && back.masks.is_empty()
+            && back.chroma.is_none()
+    );
+}
+
+#[test]
+fn look_settings_survive_save_and_load_and_copy_paste() {
+    use crate::grade::{ChromaKey, MaskDef, MaskShape};
+    let (mut doc, id) = doc_with_one_clip(4);
+    doc.update_clip(id, "x", None, |c| {
+        c.adjust.exposure = 25.0;
+        c.adjust.curves.master.points = vec![(0.5, 0.6)];
+        c.masks = vec![MaskDef::new(MaskShape::Heart)];
+        c.chroma = Some(ChromaKey::green());
+    })
+    .unwrap();
+    let back: Project =
+        serde_json::from_str(&serde_json::to_string(&doc.project).unwrap()).unwrap();
+    assert_eq!(
+        back.timeline().clip(id).unwrap(),
+        doc.project.timeline().clip(id).unwrap()
+    );
+    let copies = doc.duplicate_clips(&[id]).unwrap();
+    let copy = doc.project.timeline().clip(copies[0]).unwrap();
+    assert_eq!(copy.adjust.exposure, 25.0);
+    assert_eq!(copy.masks.len(), 1);
+    assert!(copy.chroma.is_some());
+}

@@ -1,6 +1,7 @@
 //! Timelines, tracks and clips.
 
 use crate::content::{Content, ShapeContent, TextContent};
+use crate::grade::{Adjust, ChromaKey, EffectRef, MaskDef};
 use crate::ids::{ClipId, GroupId, LinkId, MarkerId, MediaId, TimelineId, TrackId};
 use crate::layer::{AnimRef, BlendMode, Color, Crop, Transform};
 use crate::time::Micros;
@@ -50,6 +51,18 @@ pub struct Clip {
     pub group: Option<GroupId>,
     #[serde(default)]
     pub link: Option<LinkId>,
+    /// Colour adjustments (for an adjustment layer: applied to everything below).
+    #[serde(default)]
+    pub adjust: Adjust,
+    /// Effects applied after the colour adjustments, in order.
+    #[serde(default)]
+    pub effects: Vec<EffectRef>,
+    /// Masks: only the part inside all of them is shown.
+    #[serde(default)]
+    pub masks: Vec<MaskDef>,
+    /// Removal of a background colour.
+    #[serde(default)]
+    pub chroma: Option<ChromaKey>,
     /// How fast the media plays: 1.0 normal, 2.0 twice as fast, 0.0 a freeze frame. Can change along the clip.
     #[serde(default = "one")]
     pub speed: Animatable<f32>,
@@ -89,6 +102,10 @@ impl Clip {
             anim_in: None,
             anim_out: None,
             anim_combo: None,
+            adjust: Adjust::default(),
+            effects: Vec::new(),
+            masks: Vec::new(),
+            chroma: None,
             speed: one(),
             reverse: false,
             keep_pitch: true,
@@ -103,6 +120,16 @@ impl Clip {
     /// A clip of text.
     pub fn text_clip(text: TextContent, start: Micros, duration: Micros) -> Self {
         Self::with_content(Content::Text(text), start, 0, duration)
+    }
+
+    /// An adjustment layer (colour settings and effects for everything below).
+    pub fn adjustment_clip(start: Micros, duration: Micros) -> Self {
+        Self::with_content(Content::Adjustment, start, 0, duration)
+    }
+
+    /// Does this clip change what is below it instead of drawing something?
+    pub fn is_adjustment(&self) -> bool {
+        matches!(self.content, Content::Adjustment)
     }
 
     /// A clip of a drawn shape.
@@ -157,6 +184,8 @@ pub enum TrackKind {
     Text,
     /// Music, voice-over and sound effects.
     Audio,
+    /// Effects and adjustment layers: they change everything on the tracks below them.
+    Effect,
 }
 
 impl TrackKind {
@@ -176,6 +205,7 @@ impl TrackKind {
             Self::Overlay => "Overlay",
             Self::Text => "Text",
             Self::Audio => "Audio",
+            Self::Effect => "Effects",
         }
     }
 }

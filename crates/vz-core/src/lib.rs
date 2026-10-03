@@ -7,6 +7,7 @@ pub mod command;
 pub mod content;
 pub mod document;
 pub mod edit;
+pub mod grade;
 pub mod ids;
 pub mod layer;
 pub mod media;
@@ -24,6 +25,10 @@ pub use document::{
     ClipboardItem, DocError, Document, EXTENSION, RecoveryItem, kind_accepts_media, track_accepts,
 };
 pub use edit::EditError;
+pub use grade::{
+    Adjust, Band, ChromaKey, Curve, Curves, EffectRef, HslBand, LutRef, LutSource, MaskDef,
+    MaskShape, Wheel, Wheels,
+};
 pub use ids::{ClipId, GroupId, LinkId, MarkerId, MediaId, TimelineId, TrackId};
 pub use layer::{AnimRef, BLACK, BlendMode, Color, Crop, PlacedTransform, Transform, WHITE};
 pub use media::{DEFAULT_IMAGE_DURATION, MediaAsset, MediaKind};

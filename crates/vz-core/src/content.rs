@@ -11,13 +11,16 @@ pub enum Content {
     Text(TextContent),
     /// A drawn shape (rectangle, star, heart, arrow, ...).
     Shape(ShapeContent),
+    /// Draws nothing itself: its colour settings and effects change everything below it for as long as it lasts.
+    /// (An adjustment layer; a single effect put on the timeline is the same thing with one effect in it.)
+    Adjustment,
 }
 
 impl Content {
     pub fn media(&self) -> Option<MediaId> {
         match self {
             Self::Media(id) => Some(*id),
-            Self::Text(_) | Self::Shape(_) => None,
+            Self::Text(_) | Self::Shape(_) | Self::Adjustment => None,
         }
     }
 }

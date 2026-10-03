@@ -349,6 +349,7 @@ impl VidzApp {
         }
         if let Some(frame) = self.preview.take_new_frame() {
             self.shown_pictures += 1;
+            self.editor.shown_frame = Some(frame.clone());
             match &mut self.player_texture {
                 Some(tex) => tex.set(color_image(&frame), egui::TextureOptions::LINEAR),
                 None => self.player_texture = Some(frame_texture(ctx, "player", &frame)),

@@ -163,6 +163,7 @@ fn lane_color(kind: TrackKind) -> Color32 {
         TrackKind::Overlay => Color32::from_rgb(22, 22, 25),
         TrackKind::Text => Color32::from_rgb(25, 22, 17),
         TrackKind::Audio => Color32::from_rgb(17, 22, 23),
+        TrackKind::Effect => Color32::from_rgb(22, 19, 27),
     }
 }
 
@@ -179,7 +180,7 @@ pub fn clip_rect(clip: &Clip, geo: Geo, row: Rect) -> Rect {
 pub fn switch_positions(row_rect: Rect, kind: TrackKind, header_right: f32) -> Vec<(Switch, Pos2)> {
     let switches: &[Switch] = match kind {
         TrackKind::Main | TrackKind::Overlay => &[Switch::Lock, Switch::Hide, Switch::Mute],
-        TrackKind::Text => &[Switch::Lock, Switch::Hide],
+        TrackKind::Text | TrackKind::Effect => &[Switch::Lock, Switch::Hide],
         TrackKind::Audio => &[Switch::Lock, Switch::Mute],
     };
     let tall = row_rect.height() >= 44.0;
@@ -417,6 +418,11 @@ fn clip_body(
             Color32::from_rgb(140, 90, 190),
             s.kind.label().to_string(),
         ),
+        Content::Adjustment => (
+            Color32::from_rgb(30, 40, 66),
+            Color32::from_rgb(90, 130, 200),
+            adjustment_name(clip),
+        ),
         Content::Media(m) => {
             let asset = ctx.doc.project.asset(*m);
             let name = asset.map_or_else(|| "?".to_string(), |a| a.name.clone());
@@ -566,6 +572,19 @@ fn waveform(painter: &Painter, clip: &Clip, wave: &vz_audio::Waveform, rect: Rec
         let h = (peak * half).max(0.5);
         painter.vline(x + 0.5, (mid - h)..=(mid + h), Stroke::new(1.0, color));
         x += 1.0;
+    }
+}
+
+/// What to call an adjustment layer: the effect it holds, or "Adjustment".
+pub fn adjustment_name(clip: &Clip) -> String {
+    match clip.effects.first() {
+        Some(fx) if clip.adjust.is_identity() && clip.effects.len() == 1 => {
+            vz_presets::effects::find(&fx.preset)
+                .map_or("Effect", |p| p.name)
+                .to_string()
+        }
+        Some(_) => "Adjustment + effects".to_string(),
+        None => "Adjustment".to_string(),
     }
 }
 

@@ -8,6 +8,8 @@ use vz_core::{
 };
 
 pub mod animation;
+pub mod effects;
+pub mod filters;
 pub mod speed;
 pub mod transition;
 

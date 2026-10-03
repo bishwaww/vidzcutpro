@@ -412,3 +412,57 @@ fn speed_transitions_and_animations_are_in_the_exported_file() {
         );
     }
 }
+
+#[test]
+fn colour_effects_masks_and_adjustment_layers_are_in_the_exported_file() {
+    use vz_core::{Adjust, EffectRef, MaskDef, MaskShape};
+    let chart = testutil::standard();
+    let mut doc = doc_with(&[chart]);
+    doc.set_frame_rate(vz_core::FrameRate::FPS_25).unwrap();
+    let id = doc.project.timeline().main_track().clips[0].id;
+    doc.update_clip(id, "look", None, |c| {
+        c.adjust.contrast = 40.0;
+        c.adjust.vignette = 60.0;
+        c.masks = vec![MaskDef::new(MaskShape::Circle)];
+    })
+    .unwrap();
+    let bw = EffectRef {
+        preset: "black_white".into(),
+        params: vec![100.0],
+        enabled: true,
+    };
+    doc.add_adjustment_auto(US_PER_SEC, 2 * US_PER_SEC, Adjust::default(), vec![bw])
+        .unwrap();
+    let (_, out) = export_to(&doc, "looks.mp4", 360);
+    let mut file = VideoDecoder::open(&out, MaxSize::FULL).unwrap();
+    let mut preview = Renderer::new();
+    for t in [500_000, 1_500_000, 3_000_000] {
+        let from_file = file.frame_at(t).unwrap().unwrap();
+        let expected = preview.render(&doc.project, t, (640, 360));
+        let diff: f64 = from_file
+            .rgba
+            .iter()
+            .zip(&expected.rgba)
+            .map(|(a, b)| (f64::from(*a) - f64::from(*b)).abs())
+            .sum::<f64>()
+            / from_file.rgba.len() as f64;
+        assert!(
+            diff < 10.0,
+            "frame at {t} differs from the preview by {diff}"
+        );
+    }
+    // inside the black-and-white layer the picture really has no colour
+    let frame = file.frame_at(1_500_000).unwrap().unwrap();
+    let colourful = frame
+        .rgba
+        .chunks(4)
+        .filter(|p| {
+            (i32::from(p[0]) - i32::from(p[1])).abs() > 40
+                || (i32::from(p[1]) - i32::from(p[2])).abs() > 40
+        })
+        .count();
+    assert!(
+        colourful * 50 < frame.rgba.len() / 4,
+        "{colourful} coloured pixels"
+    );
+}

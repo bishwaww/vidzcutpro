@@ -833,6 +833,39 @@ impl Document {
         Ok(id)
     }
 
+    /// Change several clips in one undo step (the same change for each).
+    pub fn update_clips(
+        &mut self,
+        ids: &[ClipId],
+        label: &'static str,
+        mut change: impl FnMut(&mut Clip),
+    ) -> Result<(), DocError> {
+        let mut commands = Vec::new();
+        for id in ids {
+            let before = self
+                .project
+                .timeline()
+                .clip(*id)
+                .ok_or(EditError::ClipNotFound(*id))?
+                .clone();
+            let mut after = before.clone();
+            change(&mut after);
+            if after != before {
+                commands.push(Command::SetClip {
+                    id: *id,
+                    before: Box::new(before),
+                    after: Box::new(after),
+                    label,
+                });
+            }
+        }
+        match commands.len() {
+            0 => Ok(()),
+            1 => self.run(commands.remove(0), None),
+            _ => self.run(Command::Batch { label, commands }, None),
+        }
+    }
+
     /// Change a clip's properties (position, size, opacity, text, …). `merge` joins a run of small
     /// changes (a slider drag) into one undo step. Does nothing if nothing changed.
     pub fn update_clip(
@@ -1193,7 +1226,7 @@ pub fn kind_accepts_media(track: TrackKind, media: MediaKind) -> bool {
             matches!(media, MediaKind::Video | MediaKind::Image)
         }
         TrackKind::Audio => matches!(media, MediaKind::Audio),
-        TrackKind::Text => false,
+        TrackKind::Text | TrackKind::Effect => false,
     }
 }
 
@@ -1201,6 +1234,7 @@ fn kind_accepts_content(track: TrackKind, content: &Content, media: Option<Media
     match content {
         Content::Text(_) => matches!(track, TrackKind::Text | TrackKind::Overlay),
         Content::Shape(_) => track == TrackKind::Overlay,
+        Content::Adjustment => track == TrackKind::Effect,
         Content::Media(_) => media.is_some_and(|m| kind_accepts_media(track, m)),
     }
 }
@@ -1314,6 +1348,7 @@ impl Document {
 }
 
 mod clipboard;
+mod layers_auto;
 mod retime;
 mod transitions;
 pub use clipboard::ClipboardItem;

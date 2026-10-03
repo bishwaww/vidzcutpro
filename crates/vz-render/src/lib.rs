@@ -7,7 +7,12 @@
 //! it answers ("what does frame `t` look like?") stays the same.
 
 pub mod blend;
+pub mod color;
 pub mod composite;
+pub mod effects;
+pub mod keying;
+pub mod lut;
+pub mod scopes;
 pub mod transition;
 
 use composite::{Image, Placement};
@@ -48,6 +53,7 @@ pub struct Renderer {
     broken: HashMap<PathBuf, String>,
     text: TextEngine,
     shapes: ShapeCache,
+    luts: lut::LutCache,
 }
 
 /// One layer ready to be drawn.
@@ -77,8 +83,82 @@ struct Frame<'a> {
     text_unit: f32,
 }
 
+/// The time and place of the frame being drawn, for the things that change from frame to frame.
+fn seed_of(frame: &Frame<'_>) -> u32 {
+    (frame.t / 1000) as u32
+}
+
+/// Colour settings, effects and masks of a clip, applied to a picture (in this order: key, colour, effects, masks).
+fn process(
+    picture: &mut VideoFrame,
+    clip: &Clip,
+    frame: &Frame<'_>,
+    luts: &mut lut::LutCache,
+    with_masks: bool,
+) {
+    let local = clip.local_time(frame.t);
+    let seconds = local as f32 / 1_000_000.0;
+    if let Some(key) = &clip.chroma {
+        keying::apply_chroma(picture, key);
+    }
+    color::apply(picture, &clip.adjust, seed_of(frame), luts);
+    for fx in clip.effects.iter().filter(|e| e.enabled) {
+        if let Some(preset) = vz_presets::effects::find(&fx.preset) {
+            effects::apply(preset.kind, &fx.params, picture, seconds, seed_of(frame));
+        }
+    }
+    if with_masks {
+        keying::apply_masks(picture, &clip.masks);
+    }
+}
+
+/// Does a clip change its picture (beyond placing it)?
+fn has_look(clip: &Clip) -> bool {
+    clip.chroma.is_some()
+        || !clip.adjust.is_identity()
+        || clip.effects.iter().any(|e| e.enabled)
+        || !clip.masks.is_empty()
+}
+
+/// An adjustment layer: everything drawn so far is changed (colour, effects), more or less, inside its masks.
+fn draw_pass(canvas: &mut VideoFrame, d: &Drawn<'_>, frame: &Frame<'_>, luts: &mut lut::LutCache) {
+    if d.opacity <= 0.0 || !has_look(d.clip) {
+        return;
+    }
+    let mut changed = canvas.clone();
+    process(&mut changed, d.clip, frame, luts, false);
+    // how much of the change shows at each pixel: the masks, times the opacity
+    let mut amount = VideoFrame::black(canvas.width, canvas.height);
+    for p in amount.rgba.as_chunks_mut::<4>().0 {
+        *p = [255, 255, 255, 255];
+    }
+    keying::apply_masks(&mut amount, &d.clip.masks);
+    let opacity = d.opacity.clamp(0.0, 1.0);
+    canvas
+        .rgba
+        .as_chunks_mut::<4>()
+        .0
+        .iter_mut()
+        .zip(changed.rgba.as_chunks::<4>().0)
+        .zip(amount.rgba.as_chunks::<4>().0)
+        .for_each(|((dst, new), m)| {
+            let k = f32::from(m[3]) / 255.0 * opacity;
+            if k <= 0.0 {
+                return;
+            }
+            for i in 0..3 {
+                dst[i] =
+                    (f32::from(dst[i]) + (f32::from(new[i]) - f32::from(dst[i])) * k + 0.5) as u8;
+            }
+        });
+}
+
 /// Draw one layer onto the canvas.
-fn draw_layer(canvas: &mut VideoFrame, d: &Drawn<'_>) {
+fn draw_layer(canvas: &mut VideoFrame, d: &Drawn<'_>, frame: &Frame<'_>, luts: &mut lut::LutCache) {
+    if matches!(d.source, Source::Pass) {
+        draw_pass(canvas, d, frame, luts);
+        return;
+    }
     if d.crop.left + d.crop.right >= 1.0 || d.crop.top + d.crop.bottom >= 1.0 {
         return; // wiped away completely
     }
@@ -129,6 +209,8 @@ enum Source {
     Frame(Arc<VideoFrame>),
     Text(Arc<TextImage>),
     Shape(Arc<ShapeImage>),
+    /// An adjustment layer: no picture of its own, it changes what is below.
+    Pass,
 }
 
 impl Source {
@@ -144,6 +226,11 @@ impl Source {
                 width: s.width,
                 height: s.height,
                 rgba: &s.rgba,
+            },
+            Self::Pass => Image {
+                width: 0,
+                height: 0,
+                rgba: &[],
             },
         }
     }
@@ -231,7 +318,7 @@ impl Renderer {
             project.background,
             drawn.iter().find_map(|d| match &d.source {
                 Source::Frame(f) => Some(f),
-                Source::Text(_) | Source::Shape(_) => None,
+                Source::Text(_) | Source::Shape(_) | Source::Pass => None,
             }),
         ) {
             blurred_cover(&mut canvas, frame, amount);
@@ -239,13 +326,13 @@ impl Renderer {
 
         for d in &drawn {
             match &d.incoming {
-                None => draw_layer(&mut canvas, d),
+                None => draw_layer(&mut canvas, d, &frame, &mut self.luts),
                 Some(inc) => {
                     // both clips are drawn over what is below, then blended
                     let mut from = canvas.clone();
-                    draw_layer(&mut from, d);
+                    draw_layer(&mut from, d, &frame, &mut self.luts);
                     let mut to = canvas.clone();
-                    draw_layer(&mut to, &inc.layer);
+                    draw_layer(&mut to, &inc.layer, &frame, &mut self.luts);
                     canvas = transition::blend(&from, &to, inc.progress, inc.recipe);
                 }
             }
@@ -321,6 +408,7 @@ impl Renderer {
                 );
                 (Source::Shape(image), display)
             }
+            Content::Adjustment => (Source::Pass, (0.0, 0.0)),
         };
         let mut placement = Placement {
             center: (
@@ -336,6 +424,18 @@ impl Renderer {
         let mut opacity = clip.opacity.value_at(local);
         let mut crop = clip.crop.clamped();
         let mut source = source;
+        // key, colour, effects and masks change the picture itself (the picture is copied first: the decoder keeps its own)
+        if has_look(clip) && !matches!(source, Source::Pass) {
+            let image = source.image();
+            let mut picture = VideoFrame {
+                width: image.width,
+                height: image.height,
+                rgba: image.rgba.to_vec(),
+                pts: 0,
+            };
+            process(&mut picture, clip, frame, &mut self.luts, true);
+            source = Source::Frame(Arc::new(picture));
+        }
         // ready-made animations (in / out / combo) on top of the clip's own settings
         let anim = vz_presets::animation::state_at(clip, local);
         if !anim.is_neutral() {
@@ -418,7 +518,10 @@ fn is_plain(
     canvas: &VideoFrame,
     frame: &VideoFrame,
 ) -> bool {
-    clip.transform.is_identity()
+    // a keyed or masked picture has see-through parts, so it must be blended, not copied
+    clip.chroma.is_none()
+        && clip.masks.is_empty()
+        && clip.transform.is_identity()
         && (p.center.0 - canvas.width as f32 / 2.0).abs() < 0.01
         && (p.center.1 - canvas.height as f32 / 2.0).abs() < 0.01
         && p.scale == (1.0, 1.0)

@@ -668,3 +668,165 @@ fn a_faster_clip_shows_the_picture_from_further_into_the_file() {
     let p2 = r.render(&frozen.project, start + 1_900_000, (160, 90));
     assert_eq!(p1.rgba, p2.rgba);
 }
+
+#[test]
+fn colour_settings_on_a_clip_change_its_picture() {
+    let mut s = scene(); // a green main clip (0, 200, 0)
+    let id = s.doc.project.timeline().main_track().clips[0].id;
+    s.doc
+        .update_clip(id, "g", None, |c| c.adjust.saturation = -100.0)
+        .unwrap();
+    let f = Renderer::new().render(&s.doc.project, US_PER_SEC, SIZE);
+    let p = pixel(&f, 160, 90);
+    assert!(
+        (i32::from(p[0]) - i32::from(p[1])).abs() <= 3,
+        "grey now: {p:?}"
+    );
+}
+
+#[test]
+fn a_masked_overlay_shows_the_video_below_outside_the_mask() {
+    let mut s = scene();
+    let id = add_overlay(&mut s, "lay_red_320x180.mp4", 0xFF0000, 320, 180);
+    s.doc
+        .update_clip(id, "m", None, |c| {
+            c.masks = vec![vz_core::MaskDef::new(vz_core::MaskShape::Circle)];
+        })
+        .unwrap();
+    let f = Renderer::new().render(&s.doc.project, US_PER_SEC, SIZE);
+    assert!(
+        near(pixel(&f, 160, 90), [255, 0, 0], 12),
+        "red inside the circle"
+    );
+    assert!(
+        near(pixel(&f, 5, 5), [0, 200, 0], 12),
+        "green video outside: {:?}",
+        pixel(&f, 5, 5)
+    );
+}
+
+#[test]
+fn a_green_screen_is_replaced_by_what_is_below() {
+    // a blue video as the background, a green clip with a chroma key on top
+    let blue = solid("key_blue_320x180.mp4", 0x0000FF, 320, 180);
+    let green = solid("key_green_320x180.mp4", 0x00FF00, 320, 180);
+    let mut doc = Document::new(Project::new("key"));
+    let b = doc.import_media(vz_media::probe(&blue).unwrap()).unwrap();
+    doc.add_clip(b, 0).unwrap();
+    doc.set_frame_rate(vz_core::FrameRate::FPS_25).unwrap();
+    let track = doc.add_track(TrackKind::Overlay).unwrap();
+    let g = doc.import_media(vz_media::probe(&green).unwrap()).unwrap();
+    let id = doc.place_media(track, g, 0).unwrap();
+    doc.update_clip(id, "k", None, |c| {
+        c.chroma = Some(vz_core::ChromaKey::green())
+    })
+    .unwrap();
+    let f = Renderer::new().render(&doc.project, US_PER_SEC, SIZE);
+    assert!(
+        near(pixel(&f, 160, 90), [0, 0, 255], 25),
+        "{:?}",
+        pixel(&f, 160, 90)
+    );
+}
+
+#[test]
+fn an_adjustment_layer_changes_everything_below_it_for_its_duration() {
+    let mut s = scene();
+    let adjust = vz_core::Adjust {
+        saturation: -100.0,
+        ..vz_core::Adjust::default()
+    };
+    let (_, id) = s
+        .doc
+        .add_adjustment_auto(US_PER_SEC, US_PER_SEC, adjust, Vec::new())
+        .unwrap();
+    let mut r = Renderer::new();
+    let before = r.render(&s.doc.project, US_PER_SEC / 2, SIZE);
+    assert!(
+        near(pixel(&before, 160, 90), [0, 200, 0], 12),
+        "before the layer starts"
+    );
+    let inside = r.render(&s.doc.project, US_PER_SEC + 200_000, SIZE);
+    let p = pixel(&inside, 160, 90);
+    assert!((i32::from(p[0]) - i32::from(p[1])).abs() <= 3, "{p:?}");
+    let after = r.render(&s.doc.project, 3 * US_PER_SEC / 2 + US_PER_SEC, SIZE);
+    assert!(
+        near(pixel(&after, 160, 90), [0, 200, 0], 12),
+        "after it ends"
+    );
+    // half opacity: halfway between
+    s.doc
+        .update_clip(id, "o", None, |c| c.opacity = 0.5.into())
+        .unwrap();
+    let half = r.render(&s.doc.project, US_PER_SEC + 200_000, SIZE);
+    assert!(pixel(&half, 160, 90)[0] > 20, "{:?}", pixel(&half, 160, 90));
+    // a mask on the layer limits it to the shape
+    s.doc
+        .update_clip(id, "m", None, |c| {
+            c.opacity = 1.0.into();
+            c.masks = vec![vz_core::MaskDef::new(vz_core::MaskShape::Circle)];
+        })
+        .unwrap();
+    let masked = r.render(&s.doc.project, US_PER_SEC + 200_000, SIZE);
+    assert!(
+        near(pixel(&masked, 5, 5), [0, 200, 0], 12),
+        "outside the mask the video is untouched"
+    );
+    let q = pixel(&masked, 160, 90);
+    assert!((i32::from(q[0]) - i32::from(q[1])).abs() <= 3);
+}
+
+#[test]
+fn an_effect_clip_and_an_effect_on_one_clip_both_work() {
+    let mut s = scene();
+    let fx = |id: &str| {
+        let preset = vz_presets::effects::find(id).unwrap();
+        vz_core::EffectRef {
+            preset: id.into(),
+            params: {
+                let mut p = preset.defaults();
+                p[0] = 100.0;
+                p
+            },
+            enabled: true,
+        }
+    };
+    // on one clip: letterbox bars on the main clip
+    let id = s.doc.project.timeline().main_track().clips[0].id;
+    s.doc
+        .update_clip(id, "e", None, |c| c.effects = vec![fx("letterbox")])
+        .unwrap();
+    let f = Renderer::new().render(&s.doc.project, US_PER_SEC, SIZE);
+    assert!(near(pixel(&f, 160, 2), [0, 0, 0], 4), "bar at the top");
+    assert!(near(pixel(&f, 160, 90), [0, 200, 0], 12));
+    s.doc
+        .update_clip(id, "e", None, |c| c.effects.clear())
+        .unwrap();
+    // as an effect clip on the timeline: black & white over everything below
+    s.doc
+        .add_adjustment_auto(
+            0,
+            2 * US_PER_SEC,
+            vz_core::Adjust::default(),
+            vec![fx("black_white")],
+        )
+        .unwrap();
+    let g = Renderer::new().render(&s.doc.project, US_PER_SEC, SIZE);
+    let p = pixel(&g, 160, 90);
+    assert!((i32::from(p[0]) - i32::from(p[1])).abs() <= 2, "{p:?}");
+    // a disabled effect does nothing
+    let (_, clip) = {
+        let tl = s.doc.project.timeline();
+        let t = tl
+            .tracks
+            .iter()
+            .find(|t| t.kind == TrackKind::Effect)
+            .unwrap();
+        (t.id, t.clips[0].id)
+    };
+    s.doc
+        .update_clip(clip, "d", None, |c| c.effects[0].enabled = false)
+        .unwrap();
+    let h = Renderer::new().render(&s.doc.project, US_PER_SEC, SIZE);
+    assert!(near(pixel(&h, 160, 90), [0, 200, 0], 12));
+}

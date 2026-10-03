@@ -168,6 +168,7 @@ fn toolbar(ui: &mut egui::Ui, ctx: &mut Ctx<'_>) {
                 (TrackKind::Overlay, "Overlay track"),
                 (TrackKind::Text, "Text track"),
                 (TrackKind::Audio, "Audio track"),
+                (TrackKind::Effect, "Effect track"),
             ] {
                 if ui.button(label).clicked() {
                     if let Err(e) = ctx.doc.add_track(kind) {

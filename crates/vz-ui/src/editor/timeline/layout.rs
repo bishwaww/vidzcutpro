@@ -18,6 +18,7 @@ pub fn row_height(kind: TrackKind) -> f32 {
         TrackKind::Overlay => 54.0,
         TrackKind::Text => 36.0,
         TrackKind::Audio => 50.0,
+        TrackKind::Effect => 36.0,
     }
 }
 

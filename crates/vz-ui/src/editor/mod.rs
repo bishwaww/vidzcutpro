@@ -5,7 +5,9 @@ mod canvas;
 mod geometry;
 mod inspector;
 mod keyframes;
+mod look_panel;
 mod player;
+mod scopes_window;
 mod sticker_panel;
 mod text_panel;
 mod timeline;
@@ -58,6 +60,15 @@ pub struct EditorState {
     pub fonts: Vec<String>,
     /// Put the cursor in the inspector's text box on the next frame.
     pub focus_text: bool,
+    /// The scopes window: open or not, which scope, the latest picture and the scope's texture.
+    pub show_scopes: bool,
+    pub scope: scopes_window::Scope,
+    pub shown_frame: Option<std::sync::Arc<vz_media::VideoFrame>>,
+    pub scope_texture: Option<egui::TextureHandle>,
+    /// Which part of the Adjust tab is open, which colour band and which curve.
+    pub adjust_part: inspector::AdjustPart,
+    pub hsl_band: usize,
+    pub curve_channel: usize,
     /// The Speed tab shows the curve editor (also when the speed has no curve yet).
     pub speed_curve_mode: bool,
     /// The transition being edited, named by the clip it follows.
@@ -99,6 +110,13 @@ impl Default for EditorState {
             show_safe: false,
             fonts: Vec::new(),
             focus_text: false,
+            show_scopes: false,
+            scope: scopes_window::Scope::default(),
+            shown_frame: None,
+            scope_texture: None,
+            adjust_part: inspector::AdjustPart::default(),
+            hsl_band: 0,
+            curve_channel: 0,
             speed_curve_mode: false,
             selected_transition: None,
             tile_hover: None,
@@ -255,6 +273,7 @@ pub fn show(ui: &mut egui::Ui, ctx: &mut Ctx<'_>) -> bool {
     }
 
     draw_overlays(ui.ctx(), ctx);
+    scopes_window::show(ui.ctx(), ctx);
     sizes_changed
 }
 
