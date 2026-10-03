@@ -350,7 +350,7 @@ pub fn effects_section(ui: &mut egui::Ui, ctx: &mut Ctx<'_>, clip: &Clip) {
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if ui
-                            .small_button("✕")
+                            .small_button("Remove")
                             .on_hover_text("Remove this effect")
                             .clicked()
                         {
@@ -359,13 +359,13 @@ pub fn effects_section(ui: &mut egui::Ui, ctx: &mut Ctx<'_>, clip: &Clip) {
                             });
                         }
                         if ui
-                            .add_enabled(i + 1 < count, egui::Button::new("↓").small())
+                            .add_enabled(i + 1 < count, egui::Button::new("Down").small())
                             .clicked()
                         {
                             change(ctx, id, "Move effect", move |c| c.effects.swap(i, i + 1));
                         }
                         if ui
-                            .add_enabled(i > 0, egui::Button::new("↑").small())
+                            .add_enabled(i > 0, egui::Button::new("Up").small())
                             .clicked()
                         {
                             change(ctx, id, "Move effect", move |c| c.effects.swap(i, i - 1));

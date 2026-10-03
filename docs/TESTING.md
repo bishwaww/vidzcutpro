@@ -140,3 +140,31 @@ You need: two or three videos (one with speech or music) and a text on the timel
 14. **Export** (Ctrl+E) the whole thing and play the MP4: transitions, animations, speed and sound must match the player.
 
 **Please tell me:** any transition or animation that looks wrong, jerky playback (especially reversed clips and transitions on 1080p), sound problems when changing speed, anything confusing.
+
+## Phase 4 — your checklist
+
+You need: a normal video clip on the timeline (a person, ideally), and if you have one, a green-screen clip and a `.cube` look file.
+
+**Colour**
+1. Click a clip → **Adjust** tab. Drag **Exposure**, **Contrast**, **Saturation**, **Temperature** and watch the player.
+2. **HSL**: pick a colour dot (for example the green one) and change its Hue / Saturation: only that colour changes.
+3. **Curves**: drag on the graph to add a point; drag it up in the middle to brighten. Right-click a point to remove it.
+4. **Wheels**: drag inside the **Shadows** wheel towards blue and the **Highlights** wheel towards orange (a film look). Double-click a wheel to reset it.
+5. **Look (LUT)**: pick **teal orange** and move **Strength**. If you have a `.cube` file, press **Load a .cube file…**.
+6. Press **Ctrl+Z** a few times: every change should undo, a whole slider drag in one step.
+
+**Filters and effects**
+7. Open the **Filters** tab (top left, scroll the tab row) and click a few tiles. With a clip selected it changes that clip; with nothing selected it adds a layer on a new **Effects** track.
+8. Open **Effects**: hover over the tiles (they move). Click **Blur** or **VHS**: it goes on the selected clip (see the **Effects** tab on the right, where you can change the sliders, switch it off, or reorder). Select nothing, right-click a tile → **Put on the timeline as an effect clip**; drag its edges on the timeline.
+9. **Adjustment** tab → **Adjustment layer**: it changes everything below it for its length. Try it with a mask.
+
+**Masks and green screen**
+10. Select a clip on an **overlay** track above another video → **Video** tab, scroll to **Mask** → **+ Add mask** → **Circle**. Change **Size**, **Feather**, **Invert**.
+11. Put a green-screen clip on an overlay track, tick **Remove background colour**, raise **Intensity** until the green is gone; use **Edge feather** and **Remove spill** to clean the edges.
+
+**Scopes**
+12. Press **Scopes** (top right of the player): waveform, vectorscope, histogram. Raise Exposure and watch the waveform go up.
+
+13. **Export** (Ctrl+E) and compare the MP4 with the player: colours, effects, masks and keying must match.
+
+**Please tell me:** colours that look wrong or ugly in a filter, effects that look broken, slowness (especially with Blur or Glow on 1080p video while playing), the green-screen quality, and anything confusing.

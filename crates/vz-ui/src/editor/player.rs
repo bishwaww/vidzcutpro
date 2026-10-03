@@ -25,6 +25,16 @@ pub fn show(ui: &mut egui::Ui, ctx: &mut Ctx<'_>) {
                 .color(theme::MUTED)
                 .small(),
         );
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            ui.add_space(14.0);
+            if ui
+                .selectable_label(ctx.state.show_scopes, RichText::new("Scopes").small())
+                .on_hover_text("Show histogram, waveform and vectorscope of the picture")
+                .clicked()
+            {
+                ctx.state.show_scopes = !ctx.state.show_scopes;
+            }
+        });
     });
 
     // the controls take the bottom strip, the picture gets the rest
@@ -146,14 +156,6 @@ fn controls(ui: &mut egui::Ui, ctx: &mut Ctx<'_>) {
                 }
             });
         ui.label(RichText::new("Ratio").color(theme::MUTED).small());
-        ui.add_space(10.0);
-        if ui
-            .selectable_label(ctx.state.show_scopes, RichText::new("Scopes").small())
-            .on_hover_text("Show histogram, waveform and vectorscope of the picture")
-            .clicked()
-        {
-            ctx.state.show_scopes = !ctx.state.show_scopes;
-        }
     });
 }
 

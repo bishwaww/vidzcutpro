@@ -55,10 +55,15 @@ Legend: `[x]` done · `[ ]` to do · `[-]` skipped on purpose (reason given)
 
 **Done when:** a title can fly in with ease-out, a clip can zoom slowly with keyframes, and cuts can use transitions.
 
-## Phase 4 — Color & effects
-- [ ] Adjust: basic, HSL, curves, colour wheels, LUT (.cube import)
-- [ ] Filters library (own LUTs), adjustment layers
-- [ ] Effects library (first 25+), masks (all shapes + pen), chroma key, scopes
+## Phase 4 — Color & effects  (built 2026-10-03, waiting for the owner's hand test)
+- [x] Adjust: basic (17 sliders: temperature, tint, saturation, vibrance, exposure, brightness, contrast, highlights, shadows, whites, blacks, brilliance, sharpen, clarity, fade, vignette, grain), HSL (8 colour bands), curves (RGB + R/G/B, draggable points), colour wheels (lift / gamma / gain / offset), LUT (`.cube` import, strength) plus 4 looks of our own; "Apply to all clips"
+- [x] Filters library: 36 filters in 9 groups (each is a set of adjustments, fine-tunable on the Adjust tab)
+- [x] Adjustment layers (own effect track, with masks and opacity)
+- [x] Effects library: 39 effects (blur, zoom/spin/motion blur, sharpen, vignette, grain, letterbox, mirror, flip, split screen, glow, flash, strobe, chromatic aberration, prism, light leak, lens flare, VHS, old film, B&W, sepia, CRT, pixels, halftone, camera shake, wave, swirl, fisheye, bulge, ripple, glitch, RGB split, digital noise, kaleidoscope, tile, pulse zoom, flicker, colour cycle); on one clip (stackable, reorderable) or as an effect clip over everything below
+- [x] Masks: linear, mirror, circle, rectangle (rounded), heart, star; position, size, rotation, feather, invert; several per clip; also on adjustment layers
+- [x] Chroma key: key colour, intensity, shadow, edge feather, spill removal
+- [x] Scopes window: waveform, vectorscope, histogram
+- [ ] Not yet: masks drawn / dragged directly on the picture and the pen mask (the pen tool arrives in Phase 5), keyframes for colour / effect / mask values, saving your own presets, "copy and paste attributes", picture-frame effects, stabilize, tracking, GPU compositor (everything still runs on the CPU, all cores: 1080p effects take 3-120 ms each; the GPU comes if Phase 7 measurements need it)
 
 ## Phase 5 — Vector, advanced text & captions
 - [ ] Shapes + pen tool, gradients, colour picker with eyedropper, stroke, trim paths

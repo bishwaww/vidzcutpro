@@ -23,7 +23,17 @@
 - `D:\Projects\vidzcut` — the old Python/Qt prototype v1.4.0 (**reference only**, don't copy architecture). Notes: `docs/PROTOTYPE_NOTES.md`. Real test video: `D:/Gloma/with track.mp4` (read-only).
 - Docs: `docs/SPEC.md`, `docs/ARCHITECTURE.md`, `docs/PROTOTYPE_NOTES.md`, `docs/BUILDING.md`, `ROADMAP.md`.
 
-## Current state (2026-10-03) — Phase 3 built, waiting for the owner's hand test (Phase 1 and 2 hand tests: owner said "OK, continue" after Phase 2)
+## Current state (2026-10-03) — Phase 4 built, waiting for the owner's hand test (the owner said "OK, continue" after Phases 2 and 3)
+
+### Phase 4 additions (read this first)
+- Model: `vz-core/src/grade.rs` (`Adjust` incl. HSL / curves / wheels / `LutRef`, `MaskDef`, `ChromaKey`, `EffectRef`); `Clip` has `adjust`, `effects`, `masks`, `chroma`; `Content::Adjustment` (an adjustment layer; a lone effect on the timeline is the same thing with one `EffectRef`) lives on the new `TrackKind::Effect`; `Document::add_adjustment_auto`, `update_clips` (one undo step for many clips).
+- Render order per layer (`vz-render/src/lib.rs`, `process`): chroma key → colour (`color.rs`) → effects (`effects.rs`, one routine per `vz_presets::effects::Kind`) → masks (`keying.rs`) → animation blur → composite. An adjustment layer (`draw_pass`) runs colour + effects on a copy of the canvas and blends it back through its masks and opacity. Keyed / masked pictures are blended, never `paste_centered` (see `is_plain`). LUTs: `lut.rs` (`.cube` parser, 4 builtin looks, `LutCache`). Scopes: `scopes.rs`.
+- Data: `vz-presets/src/{effects,filters}.rs` (39 effects with control specs, 36 filters as `Adjust` presets).
+- UI: asset tabs Filters / Effects / Adjustment in `look_panel.rs` (tiles are rendered with the real code on a sample picture; effects animate on hover); inspector tabs `Adjust` (`inspector/adjust.rs`: basic/HSL/curves/wheels/look) and `Effects` (`inspector/looks.rs`: effect list, mask and chroma sections also used by the Video tab); `scopes_window.rs` (button in the player title row).
+- Speeds measured in release at 1080p: most effects 3-20 ms, blurs 45-120 ms (`cargo test --release -p vz-render effects_on_a_1080p -- --ignored --nocapture`).
+- Not done (see ROADMAP): on-picture mask handles / pen mask, keyframes for look values, user presets, copy-paste attributes, frame effects, GPU compositor.
+
+### Phase 3 additions
 
 ### Phase 3 additions (read this first)
 - `vz-anim`: `Easing` now has `Named(Family, Dir)` (sine/quad/cubic/back/elastic/bounce) and `Bezier(..)`; `Animatable` has `set_key/remove_key/key_at/prev_key/next_key/set_easing/move_key/shift/freeze_at`. `shift` keeps the value at the new start (used when clips are cut or trimmed: `Clip::shift_keys`, which also shifts `speed`).
@@ -74,4 +84,4 @@
 - Tabs Effects..Templates (except Text, Stickers) are placeholders ("Coming in Phase N"). Variable fonts are used at their default weight in the interface (video text selects bold properly).
 
 ## Next step
-Owner runs the Phase 3 checklist in `docs/TESTING.md` and says OK or reports problems → **Phase 4** (colour and effects: adjust, filters/LUTs, effects library, masks, chroma key, scopes, adjustment layers; the GPU compositor probably arrives here because effects need it).
+Owner runs the Phase 4 checklist in `docs/TESTING.md` and says OK or reports problems → **Phase 5** (vector shapes + pen tool, gradients, colour picker with eyedropper, advanced text, text templates, captions with SRT/VTT/LRC/ASS/TXT import and export, caption styles from the prototype, compound clips and multiple timeline tabs).
