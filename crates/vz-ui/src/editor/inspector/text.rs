@@ -26,7 +26,8 @@ fn color_button(
     color: Color,
     apply: impl Fn(&mut TextStyle, Color) + Send + Sync + 'static,
 ) {
-    let apply = std::sync::Arc::new(move |c: &mut Clip, col: Color| with_style(c, |s| apply(s, col)));
+    let apply =
+        std::sync::Arc::new(move |c: &mut Clip, col: Color| with_style(c, |s| apply(s, col)));
     super::super::widgets::pick_color(ui, ctx, id, property, color, apply);
 }
 
@@ -48,8 +49,13 @@ pub fn text_section(ui: &mut egui::Ui, ctx: &mut Ctx<'_>, clip: &Clip) {
             .hint_text("Type your text"),
     );
     // remember which words are selected, for the "selected words" section
-    if let Some(range) = egui::TextEdit::load_state(ui.ctx(), edit_id).and_then(|s| s.cursor.char_range()) {
-        let (a, b) = (range.primary.index.min(range.secondary.index), range.primary.index.max(range.secondary.index));
+    if let Some(range) =
+        egui::TextEdit::load_state(ui.ctx(), edit_id).and_then(|s| s.cursor.char_range())
+    {
+        let (a, b) = (
+            range.primary.index.min(range.secondary.index),
+            range.primary.index.max(range.secondary.index),
+        );
         if a != b {
             ctx.state.text_selection = Some((id, a.into(), b.into()));
         } else if edit.has_focus() {

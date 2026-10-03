@@ -30,6 +30,18 @@ pub fn show(ui: &mut egui::Ui, ctx: &mut Ctx<'_>) {
             .color(theme::MUTED)
             .small(),
     );
+    if ctx.state.sub_menu != 0 {
+        ui.add_space(6.0);
+        let drawing = ctx.state.pen.as_ref().is_some_and(|p| p.clip.is_none());
+        if ui
+            .selectable_label(drawing, RichText::new("Pen tool: draw your own shape").strong())
+            .on_hover_text("Click on the picture to add points, drag to make curves, click the first point to close the shape")
+            .clicked()
+        {
+            ctx.state.pen = (!drawing).then(super::pen::PenSession::draw);
+            ctx.state.selection.clear();
+        }
+    }
     ui.add_space(8.0);
     let search = ctx.state.search.to_lowercase();
     egui::ScrollArea::vertical()

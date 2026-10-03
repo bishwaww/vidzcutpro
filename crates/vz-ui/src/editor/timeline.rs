@@ -72,25 +72,117 @@ pub fn show(ui: &mut egui::Ui, ctx: &mut Ctx<'_>) {
     ctx.state.selection.retain(|id| tl.clip(*id).is_some());
 
     ui.add_space(6.0);
-    tabs(ui);
+    tabs(ui, ctx);
     toolbar(ui, ctx);
     ui.add_space(2.0);
     tracks(ui, ctx);
 }
 
-fn tabs(ui: &mut egui::Ui) {
+/// One tab per timeline: click to open, right-click to rename, copy or delete; "+" adds an empty one.
+fn tabs(ui: &mut egui::Ui, ctx: &mut Ctx<'_>) {
+    let list: Vec<(vz_core::TimelineId, String)> = ctx
+        .doc
+        .project
+        .timelines
+        .iter()
+        .map(|t| (t.id, t.name.clone()))
+        .collect();
+    let active = ctx.doc.project.timeline().id;
     ui.horizontal(|ui| {
         ui.add_space(12.0);
-        let tab = ui.label(RichText::new("Timeline 01").strong());
-        ui.painter().hline(
-            tab.rect.x_range(),
-            tab.rect.bottom() + 3.0,
-            Stroke::new(2.0, theme::ACCENT),
-        );
-        ui.add_space(6.0);
-        ui.add_enabled(false, egui::Button::new("+").small())
-            .on_disabled_hover_text("Multiple timelines arrive in Phase 5");
+        for (id, name) in list {
+            if ctx.state.renaming.as_ref().is_some_and(|(r, _)| *r == id) {
+                let mut done = false;
+                if let Some((_, text)) = &mut ctx.state.renaming {
+                    let edit = ui.add(egui::TextEdit::singleline(text).desired_width(120.0));
+                    edit.request_focus();
+                    done = edit.lost_focus();
+                }
+                if done
+                    && let Some((id, text)) = ctx.state.renaming.take()
+                    && !ui.input(|i| i.key_pressed(egui::Key::Escape))
+                    && let Err(e) = ctx.doc.rename_timeline(id, &text)
+                {
+                    ctx.state.say(format!("Could not rename: {e}"));
+                }
+                continue;
+            }
+            let is_active = id == active;
+            let text = if is_active {
+                RichText::new(&name).strong()
+            } else {
+                RichText::new(&name).color(theme::MUTED)
+            };
+            let tab = ui.add(egui::Label::new(text).sense(Sense::click()));
+            if is_active {
+                ui.painter().hline(
+                    tab.rect.x_range(),
+                    tab.rect.bottom() + 3.0,
+                    Stroke::new(2.0, theme::ACCENT),
+                );
+            }
+            if tab.clicked() {
+                ctx.open_timeline(id);
+            }
+            if tab.double_clicked() {
+                ctx.state.renaming = Some((id, name.clone()));
+            }
+            tab.context_menu(|ui| {
+                if ui.button("Rename").clicked() {
+                    ctx.state.renaming = Some((id, name.clone()));
+                    ui.close();
+                }
+                if ui.button("Make a copy").clicked() {
+                    match ctx.doc.duplicate_timeline(id) {
+                        Ok(copy) => ctx.open_timeline(copy),
+                        Err(e) => ctx.state.say(format!("Could not copy: {e}")),
+                    }
+                    ui.close();
+                }
+                if ui.button("Delete").clicked() {
+                    match ctx.doc.delete_timeline(id) {
+                        Ok(()) => {}
+                        Err(e) => ctx.state.say(format!("Could not delete: {e}")),
+                    }
+                    ui.close();
+                }
+            });
+            ui.add_space(10.0);
+        }
+        if ui
+            .add(egui::Button::new("+").small())
+            .on_hover_text("Add an empty timeline")
+            .clicked()
+        {
+            match ctx.doc.add_timeline() {
+                Ok(id) => ctx.open_timeline(id),
+                Err(e) => ctx.state.say(format!("Could not add a timeline: {e}")),
+            }
+        }
     });
+}
+
+/// Fold the selected clips into one compound clip.
+pub fn make_compound(ctx: &mut Ctx<'_>) {
+    if ctx.state.selection.is_empty() {
+        ctx.state
+            .say("Select the clips to fold into one compound clip first.");
+        return;
+    }
+    let ids = ctx.state.selection.clone();
+    match ctx.doc.make_compound(&ids) {
+        Ok(id) => ctx.state.selection = vec![id],
+        Err(e) => ctx
+            .state
+            .say(format!("Could not make a compound clip: {e}")),
+    }
+}
+
+/// Open the inside of the selected compound clip as its own timeline.
+pub fn open_compound(ctx: &mut Ctx<'_>, clip: ClipId) {
+    if let Some(inner) = ctx.doc.compound_timeline(clip) {
+        ctx.open_timeline(inner);
+    }
 }
 
 fn tool(ui: &mut egui::Ui, label: &str, enabled: bool, hint: &str) -> bool {
@@ -154,6 +246,21 @@ fn toolbar(ui: &mut egui::Ui, ctx: &mut Ctx<'_>) {
             "Add or remove a marker at the playhead (M)",
         ) {
             toggle_marker(ctx);
+        }
+        let is_one_compound = matches!(
+            ctx.state.selection[..],
+            [id] if ctx.doc.compound_timeline(id).is_some()
+        );
+        if tool(
+            ui,
+            "Compound",
+            can_delete,
+            "Fold the selected clips into one compound clip (Alt+G). Double-click it to open the inside.",
+        ) {
+            make_compound(ctx);
+        }
+        if is_one_compound && let [id] = ctx.state.selection[..] && tool(ui, "Open", true, "Edit what is inside the compound clip") {
+            open_compound(ctx, id);
         }
         if tool(
             ui,

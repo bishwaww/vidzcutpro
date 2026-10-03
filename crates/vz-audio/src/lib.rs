@@ -389,4 +389,26 @@ mod tests {
         assert!((rms(&backwards) - normal).abs() < normal * 0.1);
         assert!((pitch_hz(&backwards) - 440.0).abs() < 20.0);
     }
+
+    #[test]
+    fn sound_inside_a_compound_clip_plays_in_the_same_place_and_obeys_its_volume() {
+        let path = testutil::standard();
+        let mut doc = doc_with(&path);
+        let id = doc.project.timeline().main_track().clips[0].id;
+        let before = mixed(&doc, 0, RATE as usize);
+        let compound = doc.make_compound(&[id]).unwrap();
+        assert!(doc.project.timeline().main_track().clips[0].is_compound());
+        let inside = mixed(&doc, 0, RATE as usize);
+        assert_eq!(before.len(), inside.len());
+        assert!((rms(&inside) - rms(&before)).abs() < rms(&before) * 0.02);
+        assert!((pitch_hz(&inside[2000..]) - 440.0).abs() < 8.0);
+        // half the volume on the compound clip halves the sound
+        doc.update_clip(compound, "volume", None, |c| c.volume = 0.5.into())
+            .unwrap();
+        let quieter = mixed(&doc, 0, RATE as usize);
+        assert!((rms(&quieter) - rms(&before) * 0.5).abs() < rms(&before) * 0.03);
+        // past the end of the compound there is nothing
+        let end = micros_to_samples(doc.project.duration(), RATE);
+        assert_eq!(rms(&mixed(&doc, end + 100, 5_000)), 0.0);
+    }
 }

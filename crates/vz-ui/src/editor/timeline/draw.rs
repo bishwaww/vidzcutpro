@@ -423,6 +423,14 @@ fn clip_body(
             Color32::from_rgb(90, 130, 200),
             adjustment_name(clip),
         ),
+        Content::Compound(id) => (
+            Color32::from_rgb(20, 56, 40),
+            Color32::from_rgb(60, 170, 110),
+            ctx.doc
+                .project
+                .timeline_by_id(*id)
+                .map_or_else(|| "Compound clip".to_string(), |t| t.name.clone()),
+        ),
         Content::Media(m) => {
             let asset = ctx.doc.project.asset(*m);
             let name = asset.map_or_else(|| "?".to_string(), |a| a.name.clone());

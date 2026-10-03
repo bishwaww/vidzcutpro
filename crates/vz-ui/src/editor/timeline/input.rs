@@ -101,6 +101,16 @@ pub fn pointer(ui: &egui::Ui, ctx: &mut Ctx<'_>, resp: &egui::Response, frame: &
         }
     }
 
+    // double-clicking a compound clip opens what is inside it
+    if resp.double_clicked()
+        && let Some(pos) = resp.interact_pointer_pos()
+        && let Some((_, clip, _)) = clip_at(ctx, frame, pos)
+        && clip.is_compound()
+    {
+        super::open_compound(ctx, clip.id);
+        return;
+    }
+
     // a plain click
     if resp.clicked()
         && let Some(pos) = resp.interact_pointer_pos()
@@ -123,7 +133,13 @@ pub fn pointer(ui: &egui::Ui, ctx: &mut Ctx<'_>, resp: &egui::Response, frame: &
                     ctx.state.selection.push(clip.id);
                 }
             } else {
-                ctx.state.selection = vec![clip.id];
+                // a grouped clip brings its group along (Alt picks just this one)
+                let alone = ui.input(|i| i.modifiers.alt);
+                ctx.state.selection = if alone {
+                    vec![clip.id]
+                } else {
+                    ctx.doc.group_mates(clip.id)
+                };
             }
             ctx.state.selected_transition = None;
         } else if pos.x >= frame.geo.lane_x0 && !toggle {
@@ -172,7 +188,12 @@ fn start_drag(ui: &egui::Ui, ctx: &mut Ctx<'_>, frame: &Frame, origin: Pos2) {
     }
     if let Some((track, clip, rect)) = clip_at(ctx, frame, origin) {
         if !ctx.state.selection.contains(&clip.id) {
-            ctx.state.selection = vec![clip.id];
+            let alone = ui.input(|i| i.modifiers.alt);
+            ctx.state.selection = if alone {
+                vec![clip.id]
+            } else {
+                ctx.doc.group_mates(clip.id)
+            };
         }
         if track_locked(ctx, track) {
             return; // the clip is selected, but a locked track cannot be edited

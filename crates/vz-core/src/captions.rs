@@ -114,7 +114,7 @@ fn parse_timing_line(line: &str) -> Option<(Micros, Micros)> {
     let (a, b) = line.split_once("-->")?;
     let start = parse_time(a)?;
     // WebVTT may add settings after the end time ("align:start position:0%")
-    let end = parse_time(b.trim().split_whitespace().next()?)?;
+    let end = parse_time(b.split_whitespace().next()?)?;
     Some((start, end))
 }
 

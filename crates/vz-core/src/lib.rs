@@ -19,8 +19,9 @@ pub mod timeline;
 
 pub use command::{Command, History, MergeKey, TrackFlags};
 pub use content::{
-    Content, ShapeContent, ShapeKind, StyleSpan, TextAlign, TextAnimator, TextBackground, TextCase,
-    TextContent, TextGlow, TextPhase, TextShadow, TextStroke, TextStyle, TextUnit, WordMode,
+    Content, LineCap, LineJoin, PenNode, PenPath, ShapeContent, ShapeKind, StrokePlace, StyleSpan,
+    TextAlign, TextAnimator, TextBackground, TextCase, TextContent, TextGlow, TextPhase,
+    TextShadow, TextStroke, TextStyle, TextUnit, WordMode,
 };
 pub use document::{
     CaptionLook, ClipboardItem, DocError, Document, EXTENSION, RecoveryItem, kind_accepts_media,

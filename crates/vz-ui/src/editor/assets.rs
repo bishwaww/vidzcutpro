@@ -103,11 +103,8 @@ impl Category {
     }
 
     /// Which roadmap phase builds a sub-menu entry of this tab.
-    pub fn phase_of(self, sub_menu: usize) -> u8 {
-        match (self, sub_menu) {
-            (Self::Text, 2) => 7, // text templates with animation
-            _ => self.phase(),
-        }
+    pub fn phase_of(self, _sub_menu: usize) -> u8 {
+        self.phase()
     }
 
     /// Which roadmap phase builds this tab.

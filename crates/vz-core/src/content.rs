@@ -1,6 +1,6 @@
 //! What a clip shows or plays: a media file, or text.
 
-use crate::ids::MediaId;
+use crate::ids::{MediaId, TimelineId};
 use crate::layer::{Color, Gradient, WHITE};
 use crate::time::Micros;
 use serde::{Deserialize, Serialize};
@@ -16,13 +16,15 @@ pub enum Content {
     /// Draws nothing itself: its colour settings and effects change everything below it for as long as it lasts.
     /// (An adjustment layer; a single effect put on the timeline is the same thing with one effect in it.)
     Adjustment,
+    /// Another timeline played as one clip (a compound clip, or a nested sequence).
+    Compound(TimelineId),
 }
 
 impl Content {
     pub fn media(&self) -> Option<MediaId> {
         match self {
             Self::Media(id) => Some(*id),
-            Self::Text(_) | Self::Shape(_) | Self::Adjustment => None,
+            Self::Text(_) | Self::Shape(_) | Self::Adjustment | Self::Compound(_) => None,
         }
     }
 }
@@ -287,10 +289,16 @@ pub enum ShapeKind {
     Plus,
     Bubble,
     Line,
+    Parallelogram,
+    Trapezoid,
+    /// A regular polygon with `sides` corners.
+    Polygon,
+    /// A line drawn with the pen tool (see `ShapeContent::path`).
+    Path,
 }
 
 impl ShapeKind {
-    pub const ALL: [Self; 12] = [
+    pub const ALL: [Self; 16] = [
         Self::Rectangle,
         Self::Ellipse,
         Self::Triangle,
@@ -303,6 +311,10 @@ impl ShapeKind {
         Self::Plus,
         Self::Bubble,
         Self::Line,
+        Self::Parallelogram,
+        Self::Trapezoid,
+        Self::Polygon,
+        Self::Path,
     ];
 
     pub fn label(self) -> &'static str {
@@ -319,8 +331,70 @@ impl ShapeKind {
             Self::Plus => "Plus",
             Self::Bubble => "Speech bubble",
             Self::Line => "Line",
+            Self::Parallelogram => "Parallelogram",
+            Self::Trapezoid => "Trapezoid",
+            Self::Polygon => "Polygon",
+            Self::Path => "Pen path",
         }
     }
+}
+
+/// Where the outline sits on the edge of a shape.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum StrokePlace {
+    #[default]
+    Centre,
+    Inside,
+    Outside,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum LineCap {
+    #[default]
+    Round,
+    Butt,
+    Square,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum LineJoin {
+    #[default]
+    Round,
+    Miter,
+    Bevel,
+}
+
+/// A corner or curve point of a pen path. Positions are shares (0 to 1) of the shape's box; the handles are
+/// offsets from the point, in the same units, that pull the curve towards them.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct PenNode {
+    pub x: f32,
+    pub y: f32,
+    pub in_x: f32,
+    pub in_y: f32,
+    pub out_x: f32,
+    pub out_y: f32,
+}
+
+impl PenNode {
+    pub fn corner(x: f32, y: f32) -> Self {
+        Self {
+            x,
+            y,
+            ..Self::default()
+        }
+    }
+
+    pub fn has_handles(&self) -> bool {
+        self.in_x != 0.0 || self.in_y != 0.0 || self.out_x != 0.0 || self.out_y != 0.0
+    }
+}
+
+/// A path drawn with the pen tool.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct PenPath {
+    pub nodes: Vec<PenNode>,
+    pub closed: bool,
 }
 
 /// A shape: its kind, size and colours. Sizes are in reference pixels (a canvas whose short side is 1080 pixels),
@@ -336,6 +410,53 @@ pub struct ShapeContent {
     /// Rounded corners for rectangles, in reference pixels.
     #[serde(default)]
     pub corner_radius: f32,
+    /// Fills the shape with a gradient instead of the colour.
+    #[serde(default)]
+    pub gradient: Option<Gradient>,
+    #[serde(default)]
+    pub stroke_place: StrokePlace,
+    /// Dashes: (dash length, gap length) in reference pixels. `None` is a solid line.
+    #[serde(default)]
+    pub dash: Option<(f32, f32)>,
+    #[serde(default)]
+    pub cap: LineCap,
+    #[serde(default)]
+    pub join: LineJoin,
+    /// Corners of a polygon (3 or more).
+    #[serde(default = "default_sides")]
+    pub sides: u32,
+    /// Points of a star.
+    #[serde(default = "default_points")]
+    pub points: u32,
+    /// How deep the valleys of a star go, as a share of its radius (0.1 to 0.9).
+    #[serde(default = "default_inner")]
+    pub inner: f32,
+    /// Trim paths: the outline is drawn only from `trim_start` to `trim_end` (0 to 1) of its length, shifted by `trim_offset`.
+    #[serde(default)]
+    pub trim_start: f32,
+    #[serde(default = "one_f32")]
+    pub trim_end: f32,
+    #[serde(default)]
+    pub trim_offset: f32,
+    /// The pen path of a `ShapeKind::Path`.
+    #[serde(default)]
+    pub path: Option<PenPath>,
+}
+
+fn default_sides() -> u32 {
+    6
+}
+
+fn default_points() -> u32 {
+    5
+}
+
+fn default_inner() -> f32 {
+    0.42
+}
+
+fn one_f32() -> f32 {
+    1.0
 }
 
 impl ShapeContent {
@@ -344,6 +465,7 @@ impl ShapeContent {
             ShapeKind::Line => (400.0, 12.0),
             ShapeKind::Arrow => (360.0, 200.0),
             ShapeKind::Bubble => (360.0, 260.0),
+            ShapeKind::Parallelogram | ShapeKind::Trapezoid => (360.0, 220.0),
             _ => (300.0, 300.0),
         };
         Self {
@@ -353,6 +475,18 @@ impl ShapeContent {
             fill: Some([252, 198, 16, 255]),
             stroke: None,
             corner_radius: 0.0,
+            gradient: None,
+            stroke_place: StrokePlace::Centre,
+            dash: None,
+            cap: LineCap::Round,
+            join: LineJoin::Round,
+            sides: 6,
+            points: 5,
+            inner: 0.42,
+            trim_start: 0.0,
+            trim_end: 1.0,
+            trim_offset: 0.0,
+            path: None,
         }
     }
 }

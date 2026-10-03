@@ -355,6 +355,77 @@ fn text_shapes_and_overlays_are_in_the_exported_file() {
 }
 
 #[test]
+fn captions_with_word_effects_and_compound_clips_are_in_the_exported_file() {
+    use vz_core::{CaptionLook, ShapeContent, ShapeKind, TextAnimator, TextStyle, WordMode};
+    let green = testutil::video(
+        "solid_green_captions.mp4",
+        Spec {
+            pattern: Pattern::Solid(0x00A000),
+            seconds: 3,
+            ..Spec::default()
+        },
+    );
+    let mut doc = doc_with(&[green]);
+    doc.set_frame_rate(vz_core::FrameRate::FPS_25).unwrap();
+    // a Sinhala caption with karaoke words and letters that fade in
+    let style = TextStyle {
+        size: 120.0,
+        bold: true,
+        ..TextStyle::default()
+    };
+    let look = CaptionLook {
+        style,
+        words: WordMode::Karaoke {
+            highlight: [255, 0, 255, 255],
+            scale: 1.0,
+        },
+        animators: vec![TextAnimator::default()],
+        y: 0.25,
+    };
+    doc.add_caption(0, 3 * US_PER_SEC, "ශ්‍රී ලංකාව ක්‍රීඩාව", &look)
+        .unwrap();
+    // a red square folded into a compound clip
+    let mut square = ShapeContent::new(ShapeKind::Rectangle);
+    square.fill = Some([255, 0, 0, 255]);
+    square.width = 200.0;
+    square.height = 200.0;
+    let (_, id) = doc
+        .add_shape_auto(US_PER_SEC, 2 * US_PER_SEC, square)
+        .unwrap();
+    doc.make_compound(&[id]).unwrap();
+
+    let (_, out) = export_to(&doc, "captions_compound.mp4", 360);
+    let mut file = VideoDecoder::open(&out, MaxSize::FULL).unwrap();
+    let mut preview = Renderer::new();
+    for t in [500_000, 2_000_000, 2_800_000] {
+        let from_file = file.frame_at(t).unwrap().unwrap();
+        let expected = preview.render(&doc.project, t, (640, 360));
+        let diff: f64 = from_file
+            .rgba
+            .iter()
+            .zip(&expected.rgba)
+            .map(|(a, b)| (f64::from(*a) - f64::from(*b)).abs())
+            .sum::<f64>()
+            / from_file.rgba.len() as f64;
+        assert!(
+            diff < 8.0,
+            "frame at {t} differs from the preview by {diff}"
+        );
+    }
+    // the compound's square is only there from one second on, and the caption's highlight colour shows up later
+    let early = file.frame_at(500_000).unwrap().unwrap();
+    let later = file.frame_at(2_800_000).unwrap().unwrap();
+    let count = |f: &vz_media::VideoFrame, test: fn(&[u8]) -> bool| {
+        f.rgba.chunks(4).filter(|p| test(p)).count()
+    };
+    let red = |p: &[u8]| p[0] > 200 && p[1] < 60 && p[2] < 60;
+    let magenta = |p: &[u8]| p[0] > 200 && p[1] < 80 && p[2] > 200;
+    assert_eq!(count(&early, red), 0);
+    assert!(count(&later, red) > 500, "{}", count(&later, red));
+    assert!(count(&later, magenta) > 200, "{}", count(&later, magenta));
+}
+
+#[test]
 fn speed_transitions_and_animations_are_in_the_exported_file() {
     let chart = testutil::standard(); // 4 s with sound
     let mut doc = doc_with(&[chart.clone(), chart]);

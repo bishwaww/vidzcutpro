@@ -80,6 +80,7 @@ pub fn base_size(project: &Project, clip: &Clip) -> Option<Vec2> {
             Some(vec2(w, h))
         }
         Content::Adjustment => None,
+        Content::Compound(_) => Some(vec2(cw, ch)),
         Content::Shape(shape) => {
             let unit = vz_text::unit(project.canvas.width, project.canvas.height);
             let (w, h) = vz_vector::measure(shape, unit);

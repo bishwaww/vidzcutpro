@@ -16,13 +16,14 @@ const NEW_TEXT_LENGTH: i64 = 3 * US_PER_SEC;
 
 /// Which sub-menu entries this panel draws (the others are not built yet).
 pub fn handles(sub_menu: usize) -> bool {
-    matches!(sub_menu, 0 | 1 | 3)
+    matches!(sub_menu, 0..=3)
 }
 
 pub fn show(ui: &mut egui::Ui, ctx: &mut Ctx<'_>) {
     match ctx.state.sub_menu {
         0 => presets_grid(ui, ctx, true),
         1 => presets_grid(ui, ctx, false),
+        2 => super::template_panel::show(ui, ctx),
         _ => fonts_list(ui, ctx),
     }
 }

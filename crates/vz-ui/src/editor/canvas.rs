@@ -55,18 +55,18 @@ pub fn merge_key(clip: ClipId, property: &str) -> u64 {
     h.finish() | (1 << 63)
 }
 
-struct View {
-    rect: Rect,
+pub(super) struct View {
+    pub(super) rect: Rect,
     /// Screen points per canvas pixel.
-    scale: f32,
+    pub(super) scale: f32,
 }
 
 impl View {
-    fn screen(&self, p: Pos2) -> Pos2 {
+    pub(super) fn screen(&self, p: Pos2) -> Pos2 {
         self.rect.min + p.to_vec2() * self.scale
     }
 
-    fn canvas(&self, p: Pos2) -> Pos2 {
+    pub(super) fn canvas(&self, p: Pos2) -> Pos2 {
         ((p - self.rect.min) / self.scale).to_pos2()
     }
 }
@@ -115,6 +115,12 @@ pub fn show(ui: &mut egui::Ui, ctx: &mut Ctx<'_>, rect: Rect) {
     let painter = ui.painter_at(rect.expand(40.0));
 
     overlays(&painter, ctx, &view);
+
+    // the pen tool owns the mouse while it is open
+    if ctx.state.pen.is_some() {
+        super::pen::show(ui, ctx, &view, &resp, &painter);
+        return;
+    }
 
     // handles on the selected layer
     let selected = selected_placed(ctx);
@@ -199,9 +205,17 @@ pub fn show(ui: &mut egui::Ui, ctx: &mut Ctx<'_>, rect: Rect) {
         if resp.clicked()
             && let Some(pos) = resp.interact_pointer_pos()
         {
-            let (u, v) = (((pos.x - rect.left()) / rect.width()).clamp(0.0, 1.0), ((pos.y - rect.top()) / rect.height()).clamp(0.0, 1.0));
-            if let (Some(color), Some(pick)) = (super::widgets::colour_under(ctx, u, v), ctx.state.eyedropper.take()) {
-                let _ = ctx.doc.update_clip(pick.clip, "Pick colour", None, |c| (pick.apply)(c, color));
+            let (u, v) = (
+                ((pos.x - rect.left()) / rect.width()).clamp(0.0, 1.0),
+                ((pos.y - rect.top()) / rect.height()).clamp(0.0, 1.0),
+            );
+            if let (Some(color), Some(pick)) = (
+                super::widgets::colour_under(ctx, u, v),
+                ctx.state.eyedropper.take(),
+            ) {
+                let _ = ctx
+                    .doc
+                    .update_clip(pick.clip, "Pick colour", None, |c| (pick.apply)(c, color));
                 super::widgets::remember(ctx, color);
             }
         }

@@ -1235,6 +1235,7 @@ fn kind_accepts_content(track: TrackKind, content: &Content, media: Option<Media
         Content::Text(_) => matches!(track, TrackKind::Text | TrackKind::Overlay),
         Content::Shape(_) => track == TrackKind::Overlay,
         Content::Adjustment => track == TrackKind::Effect,
+        Content::Compound(_) => matches!(track, TrackKind::Main | TrackKind::Overlay),
         Content::Media(_) => media.is_some_and(|m| kind_accepts_media(track, m)),
     }
 }
@@ -1350,8 +1351,10 @@ impl Document {
 mod caption_ops;
 pub use caption_ops::CaptionLook;
 mod clipboard;
+mod group;
 mod layers_auto;
 mod retime;
+mod timelines;
 mod transitions;
 pub use clipboard::ClipboardItem;
 pub use retime::{FREEZE_LENGTH, mean_speed};

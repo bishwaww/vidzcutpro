@@ -19,7 +19,9 @@ use composite::{Image, Placement};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use vz_core::{Background, Clip, Content, MediaKind, Micros, Project, TrackId};
+use vz_core::{
+    Background, Clip, Content, MediaKind, Micros, Project, Timeline, TimelineId, TrackId,
+};
 use vz_media::{FrameSource, MaxSize, VideoFrame};
 use vz_text::{TextEngine, TextImage};
 use vz_vector::{ShapeCache, ShapeImage};
@@ -81,7 +83,12 @@ struct Frame<'a> {
     size: (u32, u32),
     to_output: f32,
     text_unit: f32,
+    /// How many compound clips deep this frame is (0 for the timeline being shown).
+    depth: u8,
 }
+
+/// Compound clips inside compound clips stop here, so a clip that (by mistake) contains itself cannot hang the program.
+const MAX_DEPTH: u8 = 6;
 
 /// The time and place of the frame being drawn, for the things that change from frame to frame.
 fn seed_of(frame: &Frame<'_>) -> u32 {
@@ -265,11 +272,44 @@ impl Renderer {
 
     /// Render the picture of `project`'s timeline at time `t`, exactly `size` pixels (width, height), RGBA.
     pub fn render(&mut self, project: &Project, t: Micros, size: (u32, u32)) -> Arc<VideoFrame> {
+        self.frame_counter += 1;
+        self.drop_unused_readers();
+        Arc::new(self.render_timeline(project, project.timeline(), t, size, None, 0))
+    }
+
+    /// A compound clip's picture: its timeline drawn twice, on black and on white, so the see-through parts can be
+    /// told from the dark and the light ones. Straight RGBA, see-through where nothing is drawn.
+    fn nested(
+        &mut self,
+        project: &Project,
+        id: TimelineId,
+        t: Micros,
+        size: (u32, u32),
+        depth: u8,
+    ) -> Option<VideoFrame> {
+        if depth > MAX_DEPTH {
+            return None;
+        }
+        let timeline = project.timeline_by_id(id)?;
+        let on_black = self.render_timeline(project, timeline, t, size, Some([0, 0, 0]), depth);
+        let on_white =
+            self.render_timeline(project, timeline, t, size, Some([255, 255, 255]), depth);
+        Some(unmatte(&on_black, &on_white))
+    }
+
+    /// Draw `timeline` at time `t`. With `backdrop`, that colour is behind everything (compound clips use black and white).
+    fn render_timeline(
+        &mut self,
+        project: &Project,
+        timeline: &Timeline,
+        t: Micros,
+        size: (u32, u32),
+        backdrop: Option<[u8; 3]>,
+        depth: u8,
+    ) -> VideoFrame {
         let (w, h) = size;
         let mut canvas = VideoFrame::black(w, h);
         canvas.pts = t;
-        self.frame_counter += 1;
-        self.drop_unused_readers();
         let frame = Frame {
             project,
             t,
@@ -277,11 +317,12 @@ impl Renderer {
             // canvas pixels (what transforms are measured in) to output pixels
             to_output: w as f32 / project.canvas.width.max(1) as f32,
             text_unit: vz_text::unit(project.canvas.width, project.canvas.height),
+            depth,
         };
 
         // pictures first, so a blurred background can use the lowest one
         let mut drawn: Vec<Drawn> = Vec::new();
-        for layer in project.timeline().layers_at(t) {
+        for layer in timeline.layers_at(t) {
             let Some(mut d) = self.layer_for(
                 &frame,
                 layer.clip,
@@ -308,7 +349,11 @@ impl Renderer {
             drawn.push(d);
         }
 
-        if let Background::Color(c) = project.background {
+        if let Some(c) = backdrop {
+            for px in canvas.rgba.as_chunks_mut::<4>().0 {
+                px.copy_from_slice(&[c[0], c[1], c[2], 255]);
+            }
+        } else if let Background::Color(c) = project.background {
             if c != vz_core::BLACK {
                 for px in canvas.rgba.as_chunks_mut::<4>().0 {
                     px.copy_from_slice(&[c[0], c[1], c[2], 255]);
@@ -337,7 +382,7 @@ impl Renderer {
                 }
             }
         }
-        Arc::new(canvas)
+        canvas
     }
 
     /// Close readers that have not been used for a while (a clip that was deleted or is far away on the timeline).
@@ -389,9 +434,12 @@ impl Renderer {
                 if text.text.trim().is_empty() {
                     return None;
                 }
-                let image = self
-                    .text
-                    .render_at(text, text_unit * to_output * bucket as f32, local, clip.duration);
+                let image = self.text.render_at(
+                    text,
+                    text_unit * to_output * bucket as f32,
+                    local,
+                    clip.duration,
+                );
                 let display = (
                     image.width as f32 / bucket as f32,
                     image.height as f32 / bucket as f32,
@@ -409,6 +457,10 @@ impl Renderer {
                 (Source::Shape(image), display)
             }
             Content::Adjustment => (Source::Pass, (0.0, 0.0)),
+            Content::Compound(id) => {
+                let picture = self.nested(project, *id, source_time, (w, h), frame.depth + 1)?;
+                (Source::Frame(Arc::new(picture)), (w as f32, h as f32))
+            }
         };
         let mut placement = Placement {
             center: (
@@ -509,6 +561,39 @@ impl Renderer {
     }
 }
 
+/// Tell the picture and its see-through parts apart: `black` and `white` are the same picture drawn over black and
+/// over white. Where they differ, the picture lets the backdrop through.
+fn unmatte(black: &VideoFrame, white: &VideoFrame) -> VideoFrame {
+    let mut out = VideoFrame {
+        width: black.width,
+        height: black.height,
+        rgba: vec![0; black.rgba.len()],
+        pts: black.pts,
+    };
+    for ((dst, b), w) in out
+        .rgba
+        .as_chunks_mut::<4>()
+        .0
+        .iter_mut()
+        .zip(black.rgba.as_chunks::<4>().0)
+        .zip(white.rgba.as_chunks::<4>().0)
+    {
+        let gap = (i32::from(w[0]) - i32::from(b[0]) + i32::from(w[1]) - i32::from(b[1])
+            + i32::from(w[2])
+            - i32::from(b[2]))
+            / 3;
+        let alpha = (255 - gap).clamp(0, 255);
+        if alpha == 0 {
+            continue;
+        }
+        for i in 0..3 {
+            dst[i] = (i32::from(b[i]) * 255 / alpha).clamp(0, 255) as u8;
+        }
+        dst[3] = alpha as u8;
+    }
+    out
+}
+
 /// A layer that is only fitted into the canvas (no move, size, turn, crop, fade or blend) can be copied directly.
 fn is_plain(
     p: &Placement,
@@ -520,6 +605,7 @@ fn is_plain(
 ) -> bool {
     // a keyed or masked picture has see-through parts, so it must be blended, not copied
     clip.chroma.is_none()
+        && !clip.is_compound()
         && clip.masks.is_empty()
         && clip.transform.is_identity()
         && (p.center.0 - canvas.width as f32 / 2.0).abs() < 0.01
@@ -720,5 +806,9 @@ mod tests {
     }
 }
 
+#[cfg(test)]
+mod tests_captions;
+#[cfg(test)]
+mod tests_compound;
 #[cfg(test)]
 mod tests_layers;

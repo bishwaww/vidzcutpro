@@ -122,6 +122,15 @@ impl Clip {
         Self::with_content(Content::Text(text), start, 0, duration)
     }
 
+    /// A clip that plays another timeline.
+    pub fn compound_clip(timeline: TimelineId, start: Micros, duration: Micros) -> Self {
+        Self::with_content(Content::Compound(timeline), start, 0, duration)
+    }
+
+    pub fn is_compound(&self) -> bool {
+        matches!(self.content, Content::Compound(_))
+    }
+
     /// An adjustment layer (colour settings and effects for everything below).
     pub fn adjustment_clip(start: Micros, duration: Micros) -> Self {
         Self::with_content(Content::Adjustment, start, 0, duration)

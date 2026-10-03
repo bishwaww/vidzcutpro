@@ -5,7 +5,7 @@ use crate::reader::AudioReader;
 use crate::retime::Retimer;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
-use vz_core::{Clip, MediaKind, Micros, Project};
+use vz_core::{Clip, Content, MediaKind, Micros, Project, Timeline};
 
 /// Microseconds to a sample number at `rate` (rounded to the nearest sample).
 pub fn micros_to_samples(t: Micros, rate: u32) -> i64 {
@@ -55,16 +55,34 @@ impl Mixer {
         out.resize(frames * 2, 0.0);
         if self.retimers.len() > 16 {
             let alive: std::collections::HashSet<_> = project
-                .timeline()
-                .tracks
+                .timelines
                 .iter()
+                .flat_map(|t| t.tracks.iter())
                 .flat_map(|t| t.clips.iter().map(|c| c.id))
                 .collect();
             self.retimers.retain(|id, _| alive.contains(id));
         }
+        self.mix(project, project.timeline(), start_sample, frames, out, 0);
+        // keep the sum from going past full scale (a proper limiter arrives with the Phase 6 mixer)
+        for v in out.iter_mut() {
+            *v = v.clamp(-1.0, 1.0);
+        }
+    }
+
+    /// Add the sound of `timeline` for samples `start_sample .. start_sample + frames` into `out` (interleaved stereo).
+    /// Compound clips play their own timeline (at normal speed; a retimed compound is silent for now).
+    fn mix(
+        &mut self,
+        project: &Project,
+        timeline: &Timeline,
+        start_sample: i64,
+        frames: usize,
+        out: &mut [f32],
+        depth: u8,
+    ) {
         let end_sample = start_sample + frames as i64;
 
-        for track in &project.timeline().tracks {
+        for track in &timeline.tracks {
             if track.muted {
                 continue;
             }
@@ -74,6 +92,25 @@ impl Mixer {
                 let from = start_sample.max(clip_start);
                 let to = end_sample.min(clip_end);
                 if from >= to {
+                    continue;
+                }
+                if let Content::Compound(inner) = &clip.content {
+                    let Some(inner) = project.timeline_by_id(*inner) else {
+                        continue;
+                    };
+                    if clip.is_retimed() || depth >= 6 {
+                        continue;
+                    }
+                    let n = (to - from) as usize;
+                    let mut inside = vec![0.0f32; n * 2];
+                    let inner_start =
+                        micros_to_samples(clip.source_in, self.rate) + (from - clip_start);
+                    self.mix(project, inner, inner_start, n, &mut inside, depth + 1);
+                    apply_gain(clip, self.rate, from - clip_start, &mut inside);
+                    let dst = &mut out[((from - start_sample) * 2) as usize..][..n * 2];
+                    for (d, s) in dst.iter_mut().zip(&inside) {
+                        *d += s;
+                    }
                     continue;
                 }
                 let Some(asset) = clip.media().and_then(|m| project.asset(m)) else {
@@ -125,10 +162,6 @@ impl Mixer {
                     *d += s;
                 }
             }
-        }
-        // keep the sum from going past full scale (a proper limiter arrives with the Phase 6 mixer)
-        for v in out.iter_mut() {
-            *v = v.clamp(-1.0, 1.0);
         }
     }
 }

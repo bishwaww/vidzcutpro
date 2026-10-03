@@ -301,11 +301,10 @@ impl Gradient {
             .clamp(1, self.stops.len() - 1);
         let (a, b) = (self.stops[i - 1], self.stops[i]);
         let f = ((t - a.0) / (b.0 - a.0).max(1e-6)).clamp(0.0, 1.0);
-        let mut out = [0u8; 4];
-        for k in 0..4 {
-            out[k] = (f32::from(a.1[k]) + (f32::from(b.1[k]) - f32::from(a.1[k])) * f + 0.5) as u8;
-        }
-        out
+        let mix = |k: usize| {
+            (f32::from(a.1[k]) + (f32::from(b.1[k]) - f32::from(a.1[k])) * f + 0.5) as u8
+        };
+        [mix(0), mix(1), mix(2), mix(3)]
     }
 
     /// The colour at a place in a box: (`u`, `v`) are 0 to 1 from the left and from the top.

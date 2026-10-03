@@ -1,6 +1,6 @@
 //! The project: the one thing that is saved to a `.vzp` file.
 
-use crate::ids::MediaId;
+use crate::ids::{MediaId, TimelineId};
 use crate::layer::{BLACK, Color};
 use crate::media::MediaAsset;
 use crate::time::{FrameRate, Micros};
@@ -120,6 +120,9 @@ pub struct Project {
     #[serde(default)]
     pub media: Vec<MediaAsset>,
     pub timelines: Vec<Timeline>,
+    /// The timeline being edited (the first one when not set).
+    #[serde(default)]
+    pub active: Option<TimelineId>,
 }
 
 impl Project {
@@ -136,16 +139,71 @@ impl Project {
             background: Background::default(),
             media: Vec::new(),
             timelines: vec![Timeline::new("Timeline 01")],
+            active: None,
         }
     }
 
-    /// The timeline being edited. (Several timelines arrive in Phase 5; for now there is one.)
+    fn active_index(&self) -> usize {
+        self.active
+            .and_then(|id| self.timelines.iter().position(|t| t.id == id))
+            .unwrap_or(0)
+    }
+
+    /// The timeline being edited.
     pub fn timeline(&self) -> &Timeline {
-        &self.timelines[0]
+        &self.timelines[self.active_index()]
     }
 
     pub fn timeline_mut(&mut self) -> &mut Timeline {
-        &mut self.timelines[0]
+        let i = self.active_index();
+        &mut self.timelines[i]
+    }
+
+    pub fn timeline_by_id(&self, id: TimelineId) -> Option<&Timeline> {
+        self.timelines.iter().find(|t| t.id == id)
+    }
+
+    /// Edit another timeline from now on. Returns false (and changes nothing) if there is no such timeline.
+    pub fn set_active(&mut self, id: TimelineId) -> bool {
+        let found = self.timelines.iter().any(|t| t.id == id);
+        if found {
+            self.active = Some(id);
+        }
+        found
+    }
+
+    /// Does `timeline` play `target` inside itself, however deep? (A compound clip must never contain itself.)
+    pub fn contains_timeline(&self, timeline: TimelineId, target: TimelineId) -> bool {
+        let Some(t) = self.timeline_by_id(timeline) else {
+            return false;
+        };
+        t.tracks
+            .iter()
+            .flat_map(|t| &t.clips)
+            .any(|c| match c.content {
+                crate::content::Content::Compound(inner) => {
+                    inner == target || self.contains_timeline(inner, target)
+                }
+                _ => false,
+            })
+    }
+
+    /// The compound clips that play `timeline`: where they are is (timeline, clip).
+    pub fn compound_users(&self, timeline: TimelineId) -> Vec<(TimelineId, crate::ids::ClipId)> {
+        self.timelines
+            .iter()
+            .flat_map(|t| {
+                t.tracks
+                    .iter()
+                    .flat_map(|k| &k.clips)
+                    .filter_map(move |c| match c.content {
+                        crate::content::Content::Compound(id) if id == timeline => {
+                            Some((t.id, c.id))
+                        }
+                        _ => None,
+                    })
+            })
+            .collect()
     }
 
     /// Length of the timeline being edited. Zero while it is empty.

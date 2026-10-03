@@ -23,9 +23,18 @@
 - `D:\Projects\vidzcut` — the old Python/Qt prototype v1.4.0 (**reference only**, don't copy architecture). Notes: `docs/PROTOTYPE_NOTES.md`. Real test video: `D:/Gloma/with track.mp4` (read-only).
 - Docs: `docs/SPEC.md`, `docs/ARCHITECTURE.md`, `docs/PROTOTYPE_NOTES.md`, `docs/BUILDING.md`, `ROADMAP.md`.
 
-## Current state (2026-10-03) — Phase 4 built, waiting for the owner's hand test (the owner said "OK, continue" after Phases 2 and 3)
+## Current state (2026-10-03) — Phase 5 built, waiting for the owner's hand test (the owner said "OK, continue" after Phases 2, 3 and 4)
 
-### Phase 4 additions (read this first)
+### Phase 5 additions (read this first)
+- Shapes: `vz-core/src/content.rs` (`ShapeKind` 16 kinds, `ShapeContent` gradient / `StrokePlace` / dash / `LineCap` / `LineJoin` / sides / points / inner / trim_* / `path: Option<PenPath>`; `PenNode` = point + in/out handles as offsets in shares of the box). Drawing in `vz-vector` (tiny-skia: gradients, stroke inside/outside via `Mask`, dashes, own trim-path code on a flattened path).
+- Pen tool: `vz-ui/src/editor/pen.rs` (`PenSession` in `EditorState.pen`, points kept in canvas pixels while editing, `fit()` stores them as shares of a box fitted round the curve, `to_canvas()` the other way, `split`, `segment_at`, `toggle_smooth`; editing a path bakes the clip's scale / turn / position into the points). Started from Stickers → Shapes → "Pen tool" or Shape tab → "Edit points". `canvas.rs` hands the mouse to `pen::show` while a session is open; `pen::keys` is called first in `handle_keys`.
+- Text: `vz-text` rich engine (spans, gradients, up to 3 outlines, glow, curve, case, word modes, animators). Captions: `vz-core/src/captions.rs` (SRT/VTT/LRC/ASS/TXT), `document/caption_ops.rs`, `vz-presets/src/captions.rs` (21 styles), `editor/caption_panel.rs`. Colour picker + eyedropper: `editor/widgets.rs`.
+- Templates and groups: `vz-presets/src/templates.rs` (9 templates, built for the canvas size), `Document::add_group` (every part on its own new track, one undo step), `group_clips / ungroup_clips / group_mates` (`document/group.rs`); clicking a grouped clip selects its group (Alt+click = one), Ctrl+G / Ctrl+Shift+G, panel `editor/template_panel.rs` (tiles are rendered with the real renderer).
+- Compound clips and timelines: `Content::Compound(TimelineId)`; `Project.active: Option<TimelineId>` decides what `timeline()` means; new commands `AddTimeline / RemoveTimeline / RenameTimeline`; **history entries remember which timeline they were made in and undo/redo switch back to it**; `document/timelines.rs` (`add/duplicate/rename/delete_timeline`, `set_active_timeline`, `make_compound`, `Timeline::copied_as`). Renderer: `render_timeline(project, timeline, t, size, backdrop, depth)`; a compound is drawn twice (on black and on white) and "unmatted" to get a see-through picture (`unmatte`), depth limit 6; compounds are never pasted (`is_plain`). Mixer: `Mixer::mix` recurses into compound clips (speed 1 only). UI: timeline tabs (`timeline.rs::tabs`), toolbar Compound / Open, Alt+G, double-click opens, `Ctx::open_timeline`. Export always exports the **open** timeline.
+- Dev script has `dclick:x,y` now. Tests added: vz-vector 15, pen 10, group 4, timelines 8, templates 4, render compound 8 / captions 4, export 1, audio 1.
+- Not done (see ROADMAP): SVG import (MPL resvg), pen masks, keyframes for shape values, break apart compound, retimed compound sound, user templates, user shape presets.
+
+### Phase 4 additions
 - Model: `vz-core/src/grade.rs` (`Adjust` incl. HSL / curves / wheels / `LutRef`, `MaskDef`, `ChromaKey`, `EffectRef`); `Clip` has `adjust`, `effects`, `masks`, `chroma`; `Content::Adjustment` (an adjustment layer; a lone effect on the timeline is the same thing with one `EffectRef`) lives on the new `TrackKind::Effect`; `Document::add_adjustment_auto`, `update_clips` (one undo step for many clips).
 - Render order per layer (`vz-render/src/lib.rs`, `process`): chroma key → colour (`color.rs`) → effects (`effects.rs`, one routine per `vz_presets::effects::Kind`) → masks (`keying.rs`) → animation blur → composite. An adjustment layer (`draw_pass`) runs colour + effects on a copy of the canvas and blends it back through its masks and opacity. Keyed / masked pictures are blended, never `paste_centered` (see `is_plain`). LUTs: `lut.rs` (`.cube` parser, 4 builtin looks, `LutCache`). Scopes: `scopes.rs`.
 - Data: `vz-presets/src/{effects,filters}.rs` (39 effects with control specs, 36 filters as `Adjust` presets).
@@ -81,7 +90,7 @@
 - FFmpeg n9.0 **LGPL shared** (BtbN build) in `third_party\ffmpeg` (git-ignored). Matches crate `ffmpeg-next 9.0.0`. Has h264/hevc/av1 nvenc/qsv/amf + libopenh264; no x264/x265 (good).
 
 ## Known issues
-- Tabs Effects..Templates (except Text, Stickers) are placeholders ("Coming in Phase N"). Variable fonts are used at their default weight in the interface (video text selects bold properly).
+- The Audio tab (Phase 6) and the Templates tab (Phase 7) are placeholders ("Coming in Phase N"); the Library / Subprojects / Voiceover sub-menus too. Variable fonts are used at their default weight in the interface (video text selects bold properly).
 
 ## Next step
-Owner runs the Phase 4 checklist in `docs/TESTING.md` and says OK or reports problems → **Phase 5** (vector shapes + pen tool, gradients, colour picker with eyedropper, advanced text, text templates, captions with SRT/VTT/LRC/ASS/TXT import and export, caption styles from the prototype, compound clips and multiple timeline tabs).
+Owner runs the Phase 5 checklist in `docs/TESTING.md` and says OK or reports problems → **Phase 6** (pro audio: loudness normalise, noise reduction, EQ, compressor, voice effects, ducking, beat detection + snap, voice-over recording, audio-only export).

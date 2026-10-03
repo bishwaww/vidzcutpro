@@ -7,21 +7,23 @@ mod geometry;
 mod inspector;
 mod keyframes;
 mod look_panel;
+mod pen;
 mod player;
 mod scopes_window;
 mod sticker_panel;
+mod template_panel;
 mod text_panel;
 mod timeline;
 mod topbar;
-mod widgets;
 mod transition_panel;
+mod widgets;
 
 use crate::settings::{LayoutPreset, UiSettings};
 use crate::theme;
 use eframe::egui::{self, Key, Modifiers, Panel};
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
-use vz_core::{ClipId, Document, MediaId, Micros};
+use vz_core::{ClipId, Document, MediaId, Micros, TimelineId};
 
 pub use assets::{Category, short_duration};
 pub use caption_panel::import_file as import_caption_file;
@@ -65,6 +67,10 @@ pub struct EditorState {
     pub focus_text: bool,
     /// The words selected in the text box: (clip, first character, end).
     pub text_selection: Option<(ClipId, usize, usize)>,
+    /// A timeline tab being renamed: which one and the name typed so far.
+    pub renaming: Option<(TimelineId, String)>,
+    /// The pen tool, while a path is being drawn or its points are being edited.
+    pub pen: Option<pen::PenSession>,
     /// Waiting for a click on the picture to take a colour from it, and the colours used lately.
     pub eyedropper: Option<widgets::Eyedropper>,
     pub recent_colors: Vec<vz_core::Color>,
@@ -126,6 +132,8 @@ impl Default for EditorState {
             fonts: Vec::new(),
             focus_text: false,
             text_selection: None,
+            renaming: None,
+            pen: None,
             eyedropper: None,
             recent_colors: Vec::new(),
             caption_style: String::new(),
@@ -203,6 +211,23 @@ pub struct Ctx<'a> {
 }
 
 impl Ctx<'_> {
+    /// Open another timeline for editing (a tab, or the inside of a compound clip).
+    pub fn open_timeline(&mut self, id: TimelineId) {
+        if self.doc.project.timeline().id == id {
+            return;
+        }
+        if self.doc.set_active_timeline(id) {
+            self.state.selection.clear();
+            self.state.selected_transition = None;
+            self.state.canvas_drag = None;
+            self.state.drag = None;
+            self.state.pen = None;
+            self.state.playing = false;
+            self.state.playhead = 0;
+            self.state.scroll_x = 0.0;
+        }
+    }
+
     /// Move the playhead (snapped to a frame, kept inside the timeline).
     pub fn seek(&mut self, t: Micros) {
         let rate = self.doc.project.frame_rate;
@@ -309,6 +334,7 @@ fn handle_keys(egui_ctx: &egui::Context, ctx: &mut Ctx<'_>) {
     let (cmd, shift) = (Modifiers::COMMAND, Modifiers::SHIFT);
     let pressed = |mods: Modifiers, key: Key| egui_ctx.input_mut(|i| i.consume_key(mods, key));
 
+    pen::keys(egui_ctx, ctx);
     if pressed(Modifiers::NONE, Key::Space) {
         ctx.actions.push(Action::TogglePlay);
     }
@@ -352,6 +378,16 @@ fn handle_keys(egui_ctx: &egui::Context, ctx: &mut Ctx<'_>) {
     if paste || pressed(cmd, Key::V) {
         timeline::paste_at_playhead(ctx);
     }
+    if pressed(Modifiers::ALT, Key::G) {
+        timeline::make_compound(ctx);
+    }
+    if pressed(cmd | shift, Key::G) {
+        let ids = ctx.state.selection.clone();
+        let _ = ctx.doc.ungroup_clips(&ids);
+    } else if pressed(cmd, Key::G) {
+        let ids = ctx.state.selection.clone();
+        let _ = ctx.doc.group_clips(&ids);
+    }
     if pressed(cmd, Key::D) {
         timeline::duplicate_selection(ctx);
     }
@@ -388,10 +424,8 @@ fn handle_keys(egui_ctx: &egui::Context, ctx: &mut Ctx<'_>) {
     if pressed(Modifiers::NONE, Key::End) {
         ctx.seek(ctx.doc.project.duration());
     }
-    if pressed(Modifiers::NONE, Key::Escape) {
-        if ctx.state.eyedropper.take().is_none() {
-            ctx.state.selection.clear();
-        }
+    if pressed(Modifiers::NONE, Key::Escape) && ctx.state.eyedropper.take().is_none() {
+        ctx.state.selection.clear();
     }
 }
 

@@ -42,9 +42,16 @@ fn current_look(ctx: &Ctx<'_>) -> (CaptionLook, Option<usize>) {
 
 fn list(ui: &mut egui::Ui, ctx: &mut Ctx<'_>) {
     ui.horizontal(|ui| {
-        if ui.add(theme::primary_button("＋ Caption")).on_hover_text("Add a caption at the playhead").clicked() {
+        if ui
+            .add(theme::primary_button("＋ Caption"))
+            .on_hover_text("Add a caption at the playhead")
+            .clicked()
+        {
             let (look, _) = current_look(ctx);
-            match ctx.doc.add_caption(ctx.state.playhead, NEW_CAPTION_LENGTH, "New caption", &look) {
+            match ctx
+                .doc
+                .add_caption(ctx.state.playhead, NEW_CAPTION_LENGTH, "New caption", &look)
+            {
                 Ok(id) => {
                     ctx.state.selection = vec![id];
                     ctx.state.inspector_tab = super::inspector::Tab::Text;
@@ -62,8 +69,16 @@ fn list(ui: &mut egui::Ui, ctx: &mut Ctx<'_>) {
     let lines = ctx.doc.caption_lines(track);
     ui.add_space(6.0);
     ui.horizontal(|ui| {
-        ui.add(egui::TextEdit::singleline(&mut ctx.state.find_text).hint_text("Find").desired_width(80.0));
-        ui.add(egui::TextEdit::singleline(&mut ctx.state.replace_text).hint_text("Replace with").desired_width(80.0));
+        ui.add(
+            egui::TextEdit::singleline(&mut ctx.state.find_text)
+                .hint_text("Find")
+                .desired_width(80.0),
+        );
+        ui.add(
+            egui::TextEdit::singleline(&mut ctx.state.replace_text)
+                .hint_text("Replace with")
+                .desired_width(80.0),
+        );
         if ui.small_button("Replace all").clicked() {
             let (find, replace) = (ctx.state.find_text.clone(), ctx.state.replace_text.clone());
             match ctx.doc.replace_in_captions(track, &find, &replace, false) {
@@ -74,7 +89,12 @@ fn list(ui: &mut egui::Ui, ctx: &mut Ctx<'_>) {
     });
     ui.horizontal(|ui| {
         ui.label(RichText::new("Move all by").color(theme::MUTED).small());
-        ui.add(egui::DragValue::new(&mut ctx.state.shift_seconds).speed(0.05).suffix(" s").max_decimals(2));
+        ui.add(
+            egui::DragValue::new(&mut ctx.state.shift_seconds)
+                .speed(0.05)
+                .suffix(" s")
+                .max_decimals(2),
+        );
         if ui.small_button("Move").clicked() {
             let delta = (f64::from(ctx.state.shift_seconds) * US_PER_SEC as f64) as i64;
             let _ = ctx.doc.shift_captions(track, delta);
@@ -160,10 +180,16 @@ fn cut(ctx: &mut Ctx<'_>, id: ClipId, line: &CaptionLine) {
         // move to the next space so a word is not cut in two
         let target = (chars as f64 * share) as usize;
         let text: Vec<char> = line.text.chars().collect();
-        (target..chars).find(|i| text[*i] == ' ').unwrap_or(target).max(1)
+        (target..chars)
+            .find(|i| text[*i] == ' ')
+            .unwrap_or(target)
+            .max(1)
     } else {
         let text: Vec<char> = line.text.chars().collect();
-        (chars / 2..chars).find(|i| text[*i] == ' ').unwrap_or(chars / 2).max(1)
+        (chars / 2..chars)
+            .find(|i| text[*i] == ' ')
+            .unwrap_or(chars / 2)
+            .max(1)
     };
     let at = inside.then_some(ctx.state.playhead);
     if let Err(e) = ctx.doc.split_caption(id, at_chars, at) {
@@ -179,18 +205,40 @@ fn import(ui: &mut egui::Ui, ctx: &mut Ctx<'_>) {
     let (look, from_style) = current_look(ctx);
     ui.horizontal(|ui| {
         ui.label("Style");
-        ui.label(RichText::new(find(&ctx.state.caption_style).map_or("Plain", |p| p.name)).strong());
-        ui.label(RichText::new("(change it on the Styles page)").color(theme::MUTED).small());
+        ui.label(
+            RichText::new(find(&ctx.state.caption_style).map_or("Plain", |p| p.name)).strong(),
+        );
+        ui.label(
+            RichText::new("(change it on the Styles page)")
+                .color(theme::MUTED)
+                .small(),
+        );
     });
     ui.horizontal(|ui| {
         ui.label("Words per caption");
-        ui.add(egui::Slider::new(&mut ctx.state.import_words, 0..=10).custom_formatter(|v, _| if v == 0.0 { "as in the file".into() } else { format!("{v}") }));
+        ui.add(
+            egui::Slider::new(&mut ctx.state.import_words, 0..=10).custom_formatter(|v, _| {
+                if v == 0.0 {
+                    "as in the file".into()
+                } else {
+                    format!("{v}")
+                }
+            }),
+        );
     });
     ui.add_space(8.0);
-    if ui.add(theme::primary_button("Choose a caption file…")).clicked()
-        && let Some(path) = rfd::FileDialog::new().add_filter("Captions", &["srt", "vtt", "lrc", "ass", "ssa", "txt"]).pick_file()
+    if ui
+        .add(theme::primary_button("Choose a caption file…"))
+        .clicked()
+        && let Some(path) = rfd::FileDialog::new()
+            .add_filter("Captions", &["srt", "vtt", "lrc", "ass", "ssa", "txt"])
+            .pick_file()
     {
-        let words = if ctx.state.import_words > 0 { Some(ctx.state.import_words) } else { from_style };
+        let words = if ctx.state.import_words > 0 {
+            Some(ctx.state.import_words)
+        } else {
+            from_style
+        };
         match read_file(&path, ctx.doc.project.duration()) {
             Ok(lines) => {
                 let lines = match words {
@@ -205,7 +253,9 @@ fn import(ui: &mut egui::Ui, ctx: &mut Ctx<'_>) {
                     Err(e) => ctx.state.say(format!("Could not add them: {e}")),
                 }
             }
-            Err(e) => ctx.state.say(format!("Could not read {}: {e}", path.display())),
+            Err(e) => ctx
+                .state
+                .say(format!("Could not read {}: {e}", path.display())),
         }
     }
     ui.add_space(6.0);
@@ -218,8 +268,16 @@ fn read_file(path: &Path, total: i64) -> Result<Vec<CaptionLine>, String> {
     let text = if bytes.starts_with(&[0xFF, 0xFE]) || bytes.starts_with(&[0xFE, 0xFF]) {
         let le = bytes[0] == 0xFF;
         let units: Vec<u16> = bytes[2..]
-            .chunks_exact(2)
-            .map(|b| if le { u16::from_le_bytes([b[0], b[1]]) } else { u16::from_be_bytes([b[0], b[1]]) })
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|b| {
+                if le {
+                    u16::from_le_bytes([b[0], b[1]])
+                } else {
+                    u16::from_be_bytes([b[0], b[1]])
+                }
+            })
             .collect();
         String::from_utf16_lossy(&units)
     } else {
@@ -240,10 +298,21 @@ fn export(ui: &mut egui::Ui, ctx: &mut Ctx<'_>) {
         ui.label(RichText::new("There are no captions to export yet.").color(theme::MUTED));
         return;
     };
-    let lines: Vec<CaptionLine> = ctx.doc.caption_lines(track).into_iter().map(|(_, l)| l).collect();
-    ui.label(RichText::new(format!("{} captions on the timeline.", lines.len())).color(theme::MUTED));
+    let lines: Vec<CaptionLine> = ctx
+        .doc
+        .caption_lines(track)
+        .into_iter()
+        .map(|(_, l)| l)
+        .collect();
+    ui.label(
+        RichText::new(format!("{} captions on the timeline.", lines.len())).color(theme::MUTED),
+    );
     ui.add_space(8.0);
-    for (label, ext) in [("Save as SRT…", "srt"), ("Save as WebVTT…", "vtt"), ("Save as text…", "txt")] {
+    for (label, ext) in [
+        ("Save as SRT…", "srt"),
+        ("Save as WebVTT…", "vtt"),
+        ("Save as text…", "txt"),
+    ] {
         if ui.button(label).clicked()
             && let Some(path) = rfd::FileDialog::new()
                 .set_file_name(format!("{}.{ext}", ctx.doc.project.name))
@@ -269,16 +338,18 @@ fn styles(ui: &mut egui::Ui, ctx: &mut Ctx<'_>) {
     ui.label(RichText::new("Click a style. It is used for new captions, and given to all captions on the timeline if the box below is ticked.").color(theme::MUTED).small());
     ui.checkbox(&mut ctx.state.captions_apply_all, "Apply to all captions");
     ui.add_space(6.0);
-    egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-        ui.horizontal_wrapped(|ui| {
-            ui.spacing_mut().item_spacing = vec2(10.0, 10.0);
-            for preset in caption_presets() {
-                if tile(ui, ctx, preset).clicked() {
-                    choose(ctx, preset);
+    egui::ScrollArea::vertical()
+        .auto_shrink([false, false])
+        .show(ui, |ui| {
+            ui.horizontal_wrapped(|ui| {
+                ui.spacing_mut().item_spacing = vec2(10.0, 10.0);
+                for preset in caption_presets() {
+                    if tile(ui, ctx, preset).clicked() {
+                        choose(ctx, preset);
+                    }
                 }
-            }
+            });
         });
-    });
 }
 
 fn choose(ctx: &mut Ctx<'_>, preset: &CaptionPreset) {
@@ -293,13 +364,22 @@ fn choose(ctx: &mut Ctx<'_>, preset: &CaptionPreset) {
     // quick looks show a few words at a time: cut the captions up to match
     let result = match words {
         Some(n) => {
-            let lines: Vec<CaptionLine> = ctx.doc.caption_lines(track).into_iter().map(|(_, l)| l).collect();
-            ctx.doc.set_captions(&captions::split_by_words(&lines, n), &look).map(|(_, ids)| ids.len())
+            let lines: Vec<CaptionLine> = ctx
+                .doc
+                .caption_lines(track)
+                .into_iter()
+                .map(|(_, l)| l)
+                .collect();
+            ctx.doc
+                .set_captions(&captions::split_by_words(&lines, n), &look)
+                .map(|(_, ids)| ids.len())
         }
         None => ctx.doc.restyle_captions(track, &look),
     };
     match result {
-        Ok(n) => ctx.state.say(format!("{} given to {n} captions", preset.name)),
+        Ok(n) => ctx
+            .state
+            .say(format!("{} given to {n} captions", preset.name)),
         Err(e) => ctx.state.say(format!("Could not apply it: {e}")),
     }
 }
@@ -318,7 +398,10 @@ fn sample_image(preset: &CaptionPreset, local: i64) -> egui::ColorImage {
     };
     let factor = (26.0 / look.style.size).clamp(0.1, 1.0);
     let image = with_text(|e| e.render_at(&text, factor, local, 2 * US_PER_SEC));
-    egui::ColorImage::from_rgba_unmultiplied([image.width as usize, image.height as usize], &image.rgba)
+    egui::ColorImage::from_rgba_unmultiplied(
+        [image.width as usize, image.height as usize],
+        &image.rgba,
+    )
 }
 
 fn tile(ui: &mut egui::Ui, ctx: &mut Ctx<'_>, preset: &CaptionPreset) -> egui::Response {
@@ -329,7 +412,11 @@ fn tile(ui: &mut egui::Ui, ctx: &mut Ctx<'_>, preset: &CaptionPreset) -> egui::R
         Some(t) => t.clone(),
         None => {
             // show the middle of the caption so word effects are visible
-            let tex = ui.ctx().load_texture(key.clone(), sample_image(preset, 1_100_000), TextureOptions::LINEAR);
+            let tex = ui.ctx().load_texture(
+                key.clone(),
+                sample_image(preset, 1_100_000),
+                TextureOptions::LINEAR,
+            );
             ctx.state.preset_tiles.insert(key, tex.clone());
             tex
         }
@@ -337,7 +424,9 @@ fn tile(ui: &mut egui::Ui, ctx: &mut Ctx<'_>, preset: &CaptionPreset) -> egui::R
     let painter = ui.painter();
     painter.rect_filled(card, CornerRadius::same(8), Color32::from_rgb(52, 62, 72));
     let size = texture.size_vec2();
-    let k = ((108.0 - 10.0) / size.x).min((64.0 - 10.0) / size.y).min(1.0);
+    let k = ((108.0 - 10.0) / size.x)
+        .min((64.0 - 10.0) / size.y)
+        .min(1.0);
     painter.image(
         texture.id(),
         egui::Rect::from_center_size(card.center(), size * k),
@@ -346,9 +435,20 @@ fn tile(ui: &mut egui::Ui, ctx: &mut Ctx<'_>, preset: &CaptionPreset) -> egui::R
     );
     let chosen = ctx.state.caption_style == preset.id;
     if resp.hovered() || chosen {
-        painter.rect_stroke(card, CornerRadius::same(8), Stroke::new(if chosen { 2.0 } else { 1.5 }, theme::ACCENT), StrokeKind::Inside);
+        painter.rect_stroke(
+            card,
+            CornerRadius::same(8),
+            Stroke::new(if chosen { 2.0 } else { 1.5 }, theme::ACCENT),
+            StrokeKind::Inside,
+        );
     }
-    painter.text(egui::pos2(rect.center().x, rect.bottom() - 8.0), Align2::CENTER_CENTER, preset.name, FontId::proportional(11.0), theme::TEXT);
+    painter.text(
+        egui::pos2(rect.center().x, rect.bottom() - 8.0),
+        Align2::CENTER_CENTER,
+        preset.name,
+        FontId::proportional(11.0),
+        theme::TEXT,
+    );
     resp.on_hover_text(preset.name)
 }
 
@@ -365,5 +465,7 @@ pub fn import_file(doc: &mut vz_core::Document, path: &Path, style: &str) -> Res
     if let Some(n) = words {
         lines = captions::split_by_words(&lines, n);
     }
-    doc.set_captions(&lines, &look).map(|(_, ids)| ids.len()).map_err(|e| e.to_string())
+    doc.set_captions(&lines, &look)
+        .map(|(_, ids)| ids.len())
+        .map_err(|e| e.to_string())
 }

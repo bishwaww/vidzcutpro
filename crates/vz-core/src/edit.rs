@@ -4,7 +4,7 @@
 //! the list is "packed". These functions never change the project themselves; commands
 //! (see `command.rs`) wrap them so every edit can be undone.
 
-use crate::ids::{ClipId, MediaId, TrackId};
+use crate::ids::{ClipId, MediaId, TimelineId, TrackId};
 use crate::time::{FrameRate, Micros};
 use crate::timeline::Clip;
 
@@ -32,6 +32,16 @@ pub enum EditError {
     MainTrack,
     #[error("that kind of clip does not go on that kind of track")]
     WrongTrack,
+    #[error("that timeline no longer exists")]
+    TimelineNotFound(TimelineId),
+    #[error("a project needs at least one timeline")]
+    LastTimeline,
+    #[error("that timeline is used by a compound clip")]
+    TimelineInUse(TimelineId),
+    #[error("select clips that touch each other on the main track")]
+    NotTogether,
+    #[error("nothing is selected")]
+    NothingSelected,
 }
 
 fn position(clips: &[Clip], id: ClipId) -> Result<usize, EditError> {

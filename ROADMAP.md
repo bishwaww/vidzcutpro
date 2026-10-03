@@ -66,10 +66,14 @@ Legend: `[x]` done · `[ ]` to do · `[-]` skipped on purpose (reason given)
 - [ ] Not yet: masks drawn / dragged directly on the picture and the pen mask (the pen tool arrives in Phase 5), keyframes for colour / effect / mask values, saving your own presets, "copy and paste attributes", picture-frame effects, stabilize, tracking, GPU compositor (everything still runs on the CPU, all cores: 1080p effects take 3-120 ms each; the GPU comes if Phase 7 measurements need it)
 
 ## Phase 5 — Vector, advanced text & captions
-- [ ] Shapes + pen tool, gradients, colour picker with eyedropper, stroke, trim paths
-- [ ] Advanced text: multi-stroke, shadow, glow, curved, per-word styling, text animators, templates
-- [ ] Captions: manual, import/export SRT/VTT/LRC/ASS/TXT, list editor, prototype's caption styles, apply-to-all
-- [ ] Compound clips + multiple timeline tabs
+- [x] Shapes: 16 kinds, gradient fill (linear / radial), outline inside / centre / outside, dashes, line ends and corners, polygon sides, star points and depth, trim paths (start / end / offset)
+- [x] Pen tool: click for corners, drag for curves, click the first point to close, Enter / double-click to finish; edit points of a path (drag points and handles, click the line to add a point, right-click to delete, double-click to smooth / sharpen)
+- [x] Colour picker with eyedropper (take a colour from the picture) and recent colours
+- [x] Advanced text: gradient fill, up to 3 outlines, shadow, glow, curve, letter case, justify, per-word colour / size / bold / italic, text animators (per letter / word / line, in / out / loop)
+- [x] Text templates (9 ready-made groups: lower third, title with line, quote card, breaking news, subscribe, social name, callout, countdown, Sinhala title card); grouping (Ctrl+G / Ctrl+Shift+G, Alt+click to pick one part)
+- [x] Captions: add by hand, import SRT / VTT / LRC / ASS / TXT, export all five, list editor (merge, split, find and replace, shift all), 21 styles, apply to all, word effects (karaoke, reveal, single word, keywords)
+- [x] Compound clips (Alt+G, double-click to open) and several timelines (tabs: add, rename, copy, delete); sound and picture of a compound play inside the parent; undo goes back to the timeline the change was made in
+- [ ] Not yet: SVG sticker import (needs your OK for the MPL-2.0 `resvg` library), mask drawn on the picture with the pen, keyframes for shape / path values, "break apart" a compound clip, retimed compound clips have no sound, shape / pen presets of your own, user text templates (Phase 7 "My templates")
 
 ## Phase 6 — Pro audio
 - [ ] Loudness normalize, noise reduction, EQ, compressor, voice effects, ducking

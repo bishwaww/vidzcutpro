@@ -168,3 +168,39 @@ You need: a normal video clip on the timeline (a person, ideally), and if you ha
 13. **Export** (Ctrl+E) and compare the MP4 with the player: colours, effects, masks and keying must match.
 
 **Please tell me:** colours that look wrong or ugly in a filter, effects that look broken, slowness (especially with Blur or Glow on 1080p video while playing), the green-screen quality, and anything confusing.
+
+## Phase 5 — your checklist
+
+You need: a video clip on the timeline. For captions, also a small `.srt` file (any subtitle file; I can make one for you).
+
+**Text (Sinhala and English)**
+1. **Text** tab → **Add text** → pick a style. In the box on the right type `ශ්‍රී ලංකාව`, then English. **Tell me if typing, Backspace or the cursor misbehave in Sinhala** (this is still untested by you).
+2. Select some words in the text box (drag over them): under the box, **Selected: "…"** appears. Change the **Colour**, **B**, **I** and **Size** of only those words.
+3. Scroll down in the Text tab: **Gradient fill**, **Extra outlines**, **Glow**, **Curve** (drag it: the text bends), **Aa / AA / aa / Title**, **Justify**.
+4. **Text animators**: add one (letter by letter, word by word). Play: letters should fly or fade in one after another. Sinhala letter groups (like ශ්‍රී) must stay together.
+5. Click the colour square → the picker opens. Press **Pick from the picture**, then click a colour in the player: the text takes that colour. Recently used colours appear under **Recent**.
+
+**Text templates**
+6. **Text** tab → **Text templates**. Click **Lower third**: three layers appear (a bar and two texts) and animate in. Click one of its clips on the timeline: all three are selected (they are a group). **Alt + click** selects only one part so you can type your own name. Try **Subscribe button**, **Quote card**, **Countdown 3-2-1** and **Sinhala title card**.
+7. Select the group's clips, press **Ctrl+Shift+G** (ungroup) and **Ctrl+G** (group again).
+
+**Shapes and the pen tool**
+8. **Stickers** tab → **Shapes**. Add a **Star**, then in the **Shape** tab change **Points** and **Depth**. Add a **Polygon** and change **Sides**.
+9. Give a shape a **Gradient** fill (Linear / Radial, two colours, Angle). Turn on **Outline**: try **Inside / Centre / Outside**, **Dashes**, line ends and corners.
+10. With an outline on, open **Trim the outline**: set **End** to 50 % and move **Offset**: the line draws only half and slides round. (Keyframes for this come later.)
+11. **Stickers → Shapes → Pen tool**. Click 4 points on the player; **drag** when you click one to pull a curve out of it. Click the first point to close the shape (or press **Enter** for an open line, **Esc** to cancel).
+12. Select your path → **Shape** tab → **Edit points**: drag points and the round handles; click on the line to add a point; right-click a point to delete it; double-click a point to make it smooth / sharp. Tick **Closed** to fill it.
+
+**Captions**
+13. **Captions** tab → **Import** → choose a `.srt` file (or `.vtt`, `.lrc`, `.ass`, `.txt`). Pick a **style** first (21 to choose from), then check the **Caption list**: edit text, **Merge**, **Split** at the cursor, **Find / replace**, **Shift all** by seconds, **Apply style to all**.
+14. Choose a **karaoke** style: the words colour in as they are said. Also try **Reveal** and **Single word**. Use Sinhala words.
+15. **Captions → Export**: save as `.srt` and `.vtt`, open them in Notepad: times and text must be right.
+
+**Compound clips and timelines**
+16. Select two clips that touch on the main track (Ctrl+click), press **Alt+G** (or the **Compound** button). They become one green clip. Play it: it must look and sound the same.
+17. **Double-click** the compound clip (or **Open**): a new tab **Compound 01** shows what is inside. Change something there, go back to **Timeline 01**: the change shows.
+18. Press **+** next to the tabs for a new empty timeline; double-click a tab name to rename it; right-click a tab for **Make a copy** / **Delete** (a timeline used by a compound clip cannot be deleted).
+19. **Ctrl+Z** after making a compound clip: everything returns, and you are taken back to the right tab.
+20. **Export** (Ctrl+E): captions, templates, shapes and compound clips in the MP4 must match the player.
+
+**Please tell me:** anything that looks wrong in text or captions (especially Sinhala), pen tool handling that feels awkward, slowness while playing compound clips (they are drawn twice), and anything confusing.

@@ -12,6 +12,7 @@ pub mod captions;
 pub mod effects;
 pub mod filters;
 pub mod speed;
+pub mod templates;
 pub mod transition;
 
 /// Name of this crate, used in diagnostics.
@@ -239,6 +240,7 @@ fn shape(
             fill,
             stroke: stroke.map(|(color, width)| TextStroke { color, width }),
             corner_radius: 0.0,
+            ..ShapeContent::new(kind)
         },
     }
 }
@@ -247,6 +249,7 @@ fn shape(
 pub fn basic_shapes() -> Vec<ShapePreset> {
     ShapeKind::ALL
         .iter()
+        .filter(|kind| **kind != ShapeKind::Path)
         .map(|kind| {
             let size = ShapeContent::new(*kind);
             shape(
@@ -390,7 +393,11 @@ mod tests {
     #[test]
     fn shape_presets_are_named_uniquely_and_cover_every_kind() {
         let basic = basic_shapes();
-        assert_eq!(basic.len(), ShapeKind::ALL.len());
+        assert_eq!(
+            basic.len(),
+            ShapeKind::ALL.len() - 1,
+            "every kind except the pen path"
+        );
         let stickers = sticker_presets();
         let mut names: Vec<_> = stickers.iter().map(|p| p.name).collect();
         names.sort_unstable();

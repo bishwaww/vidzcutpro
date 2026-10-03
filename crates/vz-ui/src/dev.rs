@@ -13,7 +13,7 @@
 //! `VIDZCUT_PLAY=1`           start playing once the imported files are on the timeline
 //! `VIDZCUT_CAPTIONS=file.srt;style_id`  import this caption file at start, with a caption style (ids in vz-presets)
 //! `VIDZCUT_SCRIPT=steps`     drive the window like a person: steps are separated by `;`
-//!     `wait:N` (frames) · `move:x,y` · `click:x,y` · `rclick:x,y` · `drag:x1,y1,x2,y2` · `key:Ctrl+B` ·
+//!     `wait:N` (frames) · `move:x,y` · `click:x,y` · `dclick:x,y` (double click) · `rclick:x,y` · `drag:x1,y1,x2,y2` · `key:Ctrl+B` ·
 //!     `shot:path.png` · `quit`. Positions are in egui points (screen pixels / display scale).
 
 use crate::settings::LayoutPreset;
@@ -101,6 +101,22 @@ impl Script {
                             Step::Wait(2),
                             left(p, true),
                             Step::Wait(2),
+                            left(p, false),
+                            Step::Wait(3),
+                        ]);
+                    }
+                }
+                "dclick" => {
+                    if let Some(p) = parse_pos(arg) {
+                        script.steps.extend([
+                            Step::Move(p),
+                            Step::Wait(2),
+                            left(p, true),
+                            Step::Wait(1),
+                            left(p, false),
+                            Step::Wait(1),
+                            left(p, true),
+                            Step::Wait(1),
                             left(p, false),
                             Step::Wait(3),
                         ]);

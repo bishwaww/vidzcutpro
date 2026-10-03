@@ -61,6 +61,14 @@ fn tabs_for(ctx: &Ctx<'_>, clip: &Clip) -> Vec<Tab> {
             Tab::Details,
         ],
         Content::Adjustment => vec![Tab::Adjust, Tab::Effects, Tab::Details],
+        Content::Compound(_) => vec![
+            Tab::Video,
+            Tab::Audio,
+            Tab::Adjust,
+            Tab::Effects,
+            Tab::Animation,
+            Tab::Details,
+        ],
         Content::Media(m) => match ctx.doc.project.asset(*m).map(|a| (a.kind, a.has_audio)) {
             Some((MediaKind::Audio, _)) => vec![Tab::Audio, Tab::Speed, Tab::Details],
             Some((MediaKind::Video, true)) => {
@@ -169,10 +177,34 @@ pub fn show(ui: &mut egui::Ui, ctx: &mut Ctx<'_>) {
                 (None, n) => {
                     ui.label(RichText::new(format!("{n} clips selected")).strong());
                     ui.add_space(4.0);
-                    ui.label(RichText::new("Select one clip to change its settings.\nPress Delete to remove them all.").color(theme::MUTED));
+                    ui.label(RichText::new("Alt+click one clip to change its settings.\nPress Delete to remove them all.").color(theme::MUTED));
+                    ui.add_space(6.0);
+                    group_buttons(ui, ctx);
                 }
             }
         });
+    });
+}
+
+/// Group / Ungroup for the clips that are selected.
+fn group_buttons(ui: &mut egui::Ui, ctx: &mut Ctx<'_>) {
+    let ids = ctx.state.selection.clone();
+    let grouped = ids.iter().any(|id| ctx.doc.group_mates(*id).len() > 1);
+    ui.horizontal(|ui| {
+        if ui
+            .button("Group")
+            .on_hover_text("Select and move these clips together (Ctrl+G)")
+            .clicked()
+        {
+            let _ = ctx.doc.group_clips(&ids);
+        }
+        if ui
+            .add_enabled(grouped, egui::Button::new("Ungroup"))
+            .on_hover_text("Ctrl+Shift+G")
+            .clicked()
+        {
+            let _ = ctx.doc.ungroup_clips(&ids);
+        }
     });
 }
 
@@ -244,7 +276,37 @@ fn change(ctx: &mut Ctx<'_>, clip: ClipId, label: &'static str, f: impl FnOnce(&
 
 // ---- a selected clip ---------------------------------------------------------------------------------------------------
 
+fn compound_header(ui: &mut egui::Ui, ctx: &mut Ctx<'_>, clip: &Clip) {
+    let Some(inner) = ctx.doc.compound_timeline(clip.id) else {
+        return;
+    };
+    let name = ctx
+        .doc
+        .project
+        .timeline_by_id(inner)
+        .map_or(String::new(), |t| t.name.clone());
+    ui.horizontal(|ui| {
+        ui.label(RichText::new(format!("Compound clip: {name}")).strong());
+        if ui
+            .button("Open")
+            .on_hover_text("Edit what is inside (or double-click the clip on the timeline)")
+            .clicked()
+        {
+            ctx.open_timeline(inner);
+        }
+    });
+    ui.label(
+        RichText::new("Changes made inside show in every compound clip that uses this timeline.")
+            .color(theme::MUTED)
+            .small(),
+    );
+    ui.add_space(6.0);
+}
+
 fn clip_tabs(ui: &mut egui::Ui, ctx: &mut Ctx<'_>, clip: &Clip) {
+    if clip.is_compound() {
+        compound_header(ui, ctx, clip);
+    }
     match ctx.state.inspector_tab {
         Tab::Video => {
             transform_section(ui, ctx, clip);
@@ -853,6 +915,11 @@ fn clip_details(ui: &mut egui::Ui, ctx: &Ctx<'_>, clip: &Clip) {
         Content::Text(t) => t.text.lines().next().unwrap_or("").to_string(),
         Content::Shape(s) => s.kind.label().to_string(),
         Content::Adjustment => "Adjustment layer".to_string(),
+        Content::Compound(id) => ctx
+            .doc
+            .project
+            .timeline_by_id(*id)
+            .map_or("Compound clip".to_string(), |t| t.name.clone()),
     };
     section_title(ui, "Selected clip");
     let tc = |t: Micros| rate.timecode(t);

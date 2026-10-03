@@ -4,11 +4,11 @@
 //! [`History::execute`].
 
 use crate::edit::EditError;
-use crate::ids::{ClipId, MediaId, TrackId};
+use crate::ids::{ClipId, MediaId, TimelineId, TrackId};
 use crate::media::MediaAsset;
 use crate::project::{Background, Canvas, Project};
 use crate::time::FrameRate;
-use crate::timeline::{Clip, Marker, Track};
+use crate::timeline::{Clip, Marker, Timeline, Track};
 
 /// The three switches on a track header.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -99,6 +99,18 @@ pub enum Command {
         before: bool,
         after: bool,
     },
+    /// Add a timeline (a compound clip's inside, a new tab) at the end of the list.
+    AddTimeline(Box<Timeline>),
+    /// Remove a timeline (kept here so undo can put it back).
+    RemoveTimeline {
+        timeline: Box<Timeline>,
+        index: usize,
+    },
+    RenameTimeline {
+        id: TimelineId,
+        before: String,
+        after: String,
+    },
     /// Several commands that undo and redo as one step.
     Batch {
         label: &'static str,
@@ -132,6 +144,9 @@ impl Command {
             Self::SetCanvas { .. } => "Change canvas",
             Self::SetFrameRate { .. } => "Change frame rate",
             Self::SetAutoSettings { .. } => "Change project settings",
+            Self::AddTimeline(_) => "Add timeline",
+            Self::RemoveTimeline { .. } => "Delete timeline",
+            Self::RenameTimeline { .. } => "Rename timeline",
             Self::Batch { label, .. } => label,
         }
     }
@@ -200,6 +215,29 @@ impl Command {
             Self::SetCanvas { after, .. } => project.canvas = *after,
             Self::SetFrameRate { after, .. } => project.frame_rate = *after,
             Self::SetAutoSettings { after, .. } => project.auto_settings = *after,
+            Self::AddTimeline(timeline) => project.timelines.push((**timeline).clone()),
+            Self::RemoveTimeline { timeline, .. } => {
+                if project.timelines.len() < 2 {
+                    return Err(EditError::LastTimeline);
+                }
+                let i = project
+                    .timelines
+                    .iter()
+                    .position(|t| t.id == timeline.id)
+                    .ok_or(EditError::TimelineNotFound(timeline.id))?;
+                project.timelines.remove(i);
+                if project.active == Some(timeline.id) {
+                    project.active = None;
+                }
+            }
+            Self::RenameTimeline { id, after, .. } => {
+                project
+                    .timelines
+                    .iter_mut()
+                    .find(|t| t.id == *id)
+                    .ok_or(EditError::TimelineNotFound(*id))?
+                    .name = after.clone();
+            }
             Self::Batch { commands, .. } => {
                 for (i, c) in commands.iter().enumerate() {
                     if let Err(e) = c.apply(project) {
@@ -257,6 +295,21 @@ impl Command {
             Self::SetCanvas { before, .. } => project.canvas = *before,
             Self::SetFrameRate { before, .. } => project.frame_rate = *before,
             Self::SetAutoSettings { before, .. } => project.auto_settings = *before,
+            Self::AddTimeline(timeline) => {
+                project.timelines.retain(|t| t.id != timeline.id);
+                if project.active == Some(timeline.id) {
+                    project.active = None;
+                }
+            }
+            Self::RemoveTimeline { timeline, index } => {
+                let at = (*index).min(project.timelines.len());
+                project.timelines.insert(at, (**timeline).clone());
+            }
+            Self::RenameTimeline { id, before, .. } => {
+                if let Some(t) = project.timelines.iter_mut().find(|t| t.id == *id) {
+                    t.name = before.clone();
+                }
+            }
             Self::Batch { commands, .. } => {
                 for c in commands.iter().rev() {
                     c.revert(project);
@@ -332,11 +385,18 @@ pub type MergeKey = u64;
 /// The undo and redo stacks.
 #[derive(Debug, Default)]
 pub struct History {
-    undo: Vec<Command>,
-    redo: Vec<Command>,
+    undo: Vec<Entry>,
+    redo: Vec<Entry>,
     merge_key: Option<MergeKey>,
     /// Goes up with every change, undo and redo. Compared with the value at the last save to know if there is unsaved work.
     revision: u64,
+}
+
+/// A command and the timeline that was being edited when it was made (undo and redo go back there first).
+#[derive(Debug)]
+struct Entry {
+    command: Command,
+    timeline: TimelineId,
 }
 
 impl History {
@@ -353,11 +413,11 @@ impl History {
     }
 
     pub fn undo_label(&self) -> Option<&'static str> {
-        self.undo.last().map(Command::label)
+        self.undo.last().map(|e| e.command.label())
     }
 
     pub fn redo_label(&self) -> Option<&'static str> {
-        self.redo.last().map(Command::label)
+        self.redo.last().map(|e| e.command.label())
     }
 
     /// Apply a command. With `merge: Some(key)`, a run of commands with the same key (a drag) is one undo step.
@@ -367,17 +427,19 @@ impl History {
         command: Command,
         merge: Option<MergeKey>,
     ) -> Result<(), EditError> {
+        let timeline = project.timeline().id;
         command.apply(project)?;
         self.revision += 1;
         self.redo.clear();
         if let (Some(key), Some(prev)) = (merge, self.undo.last_mut())
             && self.merge_key == Some(key)
-            && prev.absorb(&command)
+            && prev.timeline == timeline
+            && prev.command.absorb(&command)
         {
             return Ok(());
         }
         self.merge_key = merge;
-        self.undo.push(command);
+        self.undo.push(Entry { command, timeline });
         Ok(())
     }
 
@@ -388,26 +450,30 @@ impl History {
 
     pub fn undo(&mut self, project: &mut Project) -> bool {
         self.seal();
-        let Some(command) = self.undo.pop() else {
+        let Some(entry) = self.undo.pop() else {
             return false;
         };
-        command.revert(project);
-        self.redo.push(command);
+        project.set_active(entry.timeline);
+        entry.command.revert(project);
+        // undoing the removal of a timeline brings it back: go there
+        project.set_active(entry.timeline);
+        self.redo.push(entry);
         self.revision += 1;
         true
     }
 
     pub fn redo(&mut self, project: &mut Project) -> bool {
         self.seal();
-        let Some(command) = self.redo.pop() else {
+        let Some(entry) = self.redo.pop() else {
             return false;
         };
-        if command.apply(project).is_err() {
+        project.set_active(entry.timeline);
+        if entry.command.apply(project).is_err() {
             // cannot happen after a successful undo; drop the redo history rather than leave a broken one
             self.redo.clear();
             return false;
         }
-        self.undo.push(command);
+        self.undo.push(entry);
         self.revision += 1;
         true
     }
