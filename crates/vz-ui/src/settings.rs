@@ -45,6 +45,28 @@ impl LayoutPreset {
     }
 }
 
+/// Choices made in the Settings window.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Preferences {
+    /// How often the project is saved for crash recovery, in seconds.
+    pub autosave_secs: u32,
+    /// Size of everything in the window: 1.0 is normal.
+    pub ui_scale: f32,
+    /// Let the graphics card make the video when it can.
+    pub hardware_encoder: bool,
+}
+
+impl Default for Preferences {
+    fn default() -> Self {
+        Self {
+            autosave_secs: 30,
+            ui_scale: 1.0,
+            hardware_encoder: true,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct UiSettings {
     pub layout: LayoutPreset,
@@ -63,6 +85,13 @@ pub struct UiSettings {
     pub effect_dirs: Vec<PathBuf>,
     #[serde(default)]
     pub mic: Option<String>,
+    #[serde(default)]
+    pub prefs: Preferences,
+    /// The shortcut set (`vidzcut` or `premiere`) and the user's own changes to it (command id → `Ctrl+Shift+Z`).
+    #[serde(default)]
+    pub shortcut_preset: String,
+    #[serde(default)]
+    pub shortcuts: BTreeMap<String, String>,
 }
 
 impl UiSettings {

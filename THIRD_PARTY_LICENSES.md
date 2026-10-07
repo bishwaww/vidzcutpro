@@ -19,6 +19,9 @@ Status (2026-10-03, end of Phase 2): **direct dependencies only**. A full check 
 | directories | 6 | MIT OR Apache-2.0 | config/log folders |
 | tracing, tracing-subscriber | 0.1 / 0.3 | MIT | logging |
 | cpal | 0.18 | Apache-2.0 | vz-audio (sound device) |
+| gif | 0.14 | MIT OR Apache-2.0 | vz-export (writing animated GIFs) |
+| color_quant | 1.1 | MIT | vz-export (GIF colour palette, NeuQuant) |
+| image (jpeg feature, zune-jpeg) | 0.25 | MIT OR Apache-2.0 OR Zlib | vz-export (saving JPG pictures) |
 | rfd | 0.17 | MIT | vz-ui (open/save dialogs) |
 | chrono | 0.4 | MIT OR Apache-2.0 | vz-ui (local time shown in the top bar) |
 | crossbeam-channel | 0.5 | MIT OR Apache-2.0 | vz-media, vz-audio, vz-ui (messages between threads) |

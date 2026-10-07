@@ -27,6 +27,7 @@ use std::time::{Duration, Instant};
 use vz_core::{ClipId, Document, MediaId, Micros, TimelineId};
 
 pub use assets::{Category, short_duration};
+pub use audio_panel::audio_dir;
 pub use caption_panel::import_file as import_caption_file;
 pub use timeline::TimelineDrag;
 
@@ -93,6 +94,8 @@ pub struct EditorState {
     pub audio_page: inspector::AudioPage,
     pub audio_jobs: crate::audio_jobs::AudioJobs,
     pub audio_panel: audio_panel::PanelState,
+    /// The Settings window.
+    pub settings_ui: crate::settings_window::SettingsState,
     pub hsl_band: usize,
     pub curve_channel: usize,
     /// The Speed tab shows the curve editor (also when the speed has no curve yet).
@@ -155,6 +158,7 @@ impl Default for EditorState {
             audio_page: inspector::AudioPage::default(),
             audio_jobs: crate::audio_jobs::AudioJobs::default(),
             audio_panel: audio_panel::PanelState::default(),
+            settings_ui: crate::settings_window::SettingsState::default(),
             hsl_band: 0,
             curve_channel: 0,
             speed_curve_mode: false,
@@ -341,39 +345,32 @@ pub fn show(ui: &mut egui::Ui, ctx: &mut Ctx<'_>) -> bool {
 
 /// Keyboard shortcuts (the CapCut-style defaults from the spec). They are ignored while typing in a text box.
 fn handle_keys(egui_ctx: &egui::Context, ctx: &mut Ctx<'_>) {
-    if egui_ctx.egui_wants_keyboard_input() {
+    // while a shortcut is being recorded in the Settings window, keys belong to that window
+    if egui_ctx.egui_wants_keyboard_input() || ctx.state.settings_ui.is_typing_a_shortcut() {
         return;
     }
-    let (cmd, shift) = (Modifiers::COMMAND, Modifiers::SHIFT);
+    let shift = Modifiers::SHIFT;
     let pressed = |mods: Modifiers, key: Key| egui_ctx.input_mut(|i| i.consume_key(mods, key));
 
     pen::keys(egui_ctx, ctx);
-    if pressed(Modifiers::NONE, Key::Space) {
-        ctx.actions.push(Action::TogglePlay);
+
+    // the shortcuts that can be changed in Settings (longest combinations first)
+    let keymap = crate::keymap::Keymap::from_settings(ctx.settings);
+    for (cmd, combo) in keymap.in_matching_order() {
+        if pressed(combo.modifiers(), combo.key) {
+            run_command(ctx, cmd);
+        }
     }
-    if pressed(cmd | shift, Key::Z) || pressed(cmd, Key::Y) {
+    // a few fixed extras
+    if pressed(Modifiers::COMMAND, Key::Y) {
         ctx.doc.redo();
-    } else if pressed(cmd, Key::Z) {
-        ctx.doc.undo();
     }
-    if pressed(cmd | shift, Key::S) {
-        ctx.actions.push(Action::SaveAs);
-    } else if pressed(cmd, Key::S) {
-        ctx.actions.push(Action::Save);
+    if pressed(Modifiers::NONE, Key::Backspace) {
+        timeline::delete_selection(ctx);
     }
-    if pressed(cmd, Key::O) {
-        ctx.actions.push(Action::OpenDialog);
-    }
-    if pressed(cmd, Key::I) {
-        ctx.actions.push(Action::ImportDialog);
-    }
-    if pressed(cmd, Key::E) {
-        ctx.actions.push(Action::Export);
-    }
-    if pressed(cmd, Key::B) {
-        timeline::split_at_playhead(ctx);
-    }
+
     // copy, cut and paste arrive as their own events (not as key presses) when typed on a real keyboard
+    let cmd = Modifiers::COMMAND;
     let (copy, cut, paste) = egui_ctx.input(|i| {
         let has = |f: fn(&egui::Event) -> bool| i.events.iter().any(f);
         (
@@ -391,22 +388,6 @@ fn handle_keys(egui_ctx: &egui::Context, ctx: &mut Ctx<'_>) {
     if paste || pressed(cmd, Key::V) {
         timeline::paste_at_playhead(ctx);
     }
-    if pressed(Modifiers::ALT, Key::G) {
-        timeline::make_compound(ctx);
-    }
-    if pressed(cmd | shift, Key::G) {
-        let ids = ctx.state.selection.clone();
-        let _ = ctx.doc.ungroup_clips(&ids);
-    } else if pressed(cmd, Key::G) {
-        let ids = ctx.state.selection.clone();
-        let _ = ctx.doc.group_clips(&ids);
-    }
-    if pressed(cmd, Key::D) {
-        timeline::duplicate_selection(ctx);
-    }
-    if pressed(Modifiers::NONE, Key::M) {
-        timeline::toggle_marker(ctx);
-    }
     // nudge the selected layer on the picture: Alt + arrows move 1 pixel, Alt + Shift + arrows 10 pixels
     for (key, dx, dy) in [
         (Key::ArrowLeft, -1.0, 0.0),
@@ -420,25 +401,47 @@ fn handle_keys(egui_ctx: &egui::Context, ctx: &mut Ctx<'_>) {
             }
         }
     }
-    if pressed(Modifiers::NONE, Key::Delete) || pressed(Modifiers::NONE, Key::Backspace) {
-        timeline::delete_selection(ctx);
-    }
-    // frame step and jumps
+}
+
+/// Do what a shortcut stands for.
+fn run_command(ctx: &mut Ctx<'_>, cmd: crate::keymap::Cmd) {
+    use crate::keymap::Cmd;
     let frame = ctx.doc.project.frame_rate.frame_start(1);
-    if pressed(Modifiers::NONE, Key::ArrowLeft) {
-        ctx.seek(ctx.state.playhead - frame);
-    }
-    if pressed(Modifiers::NONE, Key::ArrowRight) {
-        ctx.seek(ctx.state.playhead + frame);
-    }
-    if pressed(Modifiers::NONE, Key::Home) {
-        ctx.seek(0);
-    }
-    if pressed(Modifiers::NONE, Key::End) {
-        ctx.seek(ctx.doc.project.duration());
-    }
-    if pressed(Modifiers::NONE, Key::Escape) && ctx.state.eyedropper.take().is_none() {
-        ctx.state.selection.clear();
+    match cmd {
+        Cmd::PlayPause => ctx.actions.push(Action::TogglePlay),
+        Cmd::Undo => {
+            ctx.doc.undo();
+        }
+        Cmd::Redo => {
+            ctx.doc.redo();
+        }
+        Cmd::Save => ctx.actions.push(Action::Save),
+        Cmd::SaveAs => ctx.actions.push(Action::SaveAs),
+        Cmd::Open => ctx.actions.push(Action::OpenDialog),
+        Cmd::Import => ctx.actions.push(Action::ImportDialog),
+        Cmd::Export => ctx.actions.push(Action::Export),
+        Cmd::Split => timeline::split_at_playhead(ctx),
+        Cmd::Duplicate => timeline::duplicate_selection(ctx),
+        Cmd::Group => {
+            let ids = ctx.state.selection.clone();
+            let _ = ctx.doc.group_clips(&ids);
+        }
+        Cmd::Ungroup => {
+            let ids = ctx.state.selection.clone();
+            let _ = ctx.doc.ungroup_clips(&ids);
+        }
+        Cmd::Compound => timeline::make_compound(ctx),
+        Cmd::Marker => timeline::toggle_marker(ctx),
+        Cmd::Delete => timeline::delete_selection(ctx),
+        Cmd::FrameBack => ctx.seek(ctx.state.playhead - frame),
+        Cmd::FrameForward => ctx.seek(ctx.state.playhead + frame),
+        Cmd::GoToStart => ctx.seek(0),
+        Cmd::GoToEnd => ctx.seek(ctx.doc.project.duration()),
+        Cmd::Deselect => {
+            if ctx.state.eyedropper.take().is_none() {
+                ctx.state.selection.clear();
+            }
+        }
     }
 }
 

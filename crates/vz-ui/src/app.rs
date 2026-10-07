@@ -23,9 +23,6 @@ const LOGO_PNG: &[u8] = include_bytes!("../../../assets/brand/logo.png");
 const MARK_PNG: &[u8] = include_bytes!("../../../assets/brand/mark.png");
 const ICON_PNG: &[u8] = include_bytes!("../../../assets/brand/icon.png");
 
-/// How often unsaved work is copied to the recovery folder.
-const AUTOSAVE_EVERY: Duration = Duration::from_secs(30);
-
 /// File types the import dialog offers.
 const MEDIA_EXTENSIONS: &[&str] = &[
     "mp4", "mov", "mkv", "webm", "avi", "m4v", "mts", "m2ts", "ts", "hevc", "mp3", "wav", "aac",
@@ -283,7 +280,10 @@ impl VidzApp {
     }
 
     fn autosave_tick(&mut self) {
-        if !matches!(self.screen, Screen::Editor) || self.last_autosave.elapsed() < AUTOSAVE_EVERY {
+        if !matches!(self.screen, Screen::Editor)
+            || self.last_autosave.elapsed()
+                < Duration::from_secs(u64::from(self.settings.prefs.autosave_secs.max(5)))
+        {
             return;
         }
         self.last_autosave = Instant::now();
@@ -799,6 +799,10 @@ impl eframe::App for VidzApp {
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        let scale = self.settings.prefs.ui_scale.clamp(0.75, 1.5);
+        if (ctx.zoom_factor() - scale).abs() > 0.001 {
+            ctx.set_zoom_factor(scale);
+        }
         if self.textures.is_none() {
             self.textures = Some((
                 load_texture(&ctx, "logo", LOGO_PNG),
@@ -859,6 +863,9 @@ impl eframe::App for VidzApp {
             }
         }
 
+        if crate::settings_window::show(&ctx, &mut self.editor.settings_ui, &mut self.settings) {
+            self.settings_dirty = true;
+        }
         self.show_dialog(&ctx);
         if let Some(dialog) = &mut self.export
             && dialog.show(&ctx, &self.doc.project, &mut self.settings)

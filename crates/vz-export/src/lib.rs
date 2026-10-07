@@ -73,7 +73,7 @@ impl VideoCodec {
     /// Is any encoder for this codec on this computer?
     pub fn is_available(self) -> bool {
         let _ = vz_media::init();
-        !encode::encoder_candidates(self).is_empty()
+        !encode::encoder_candidates(self, true).is_empty()
     }
 
     /// How much of the H.264 bit rate gives the same look.
@@ -130,6 +130,8 @@ pub struct ExportSettings {
     pub custom_kbps: Option<u32>,
     pub codec: VideoCodec,
     pub container: Container,
+    /// Try the graphics card's encoders first. When false only the software ones are used.
+    pub use_hardware: bool,
     /// Export only this part of the timeline (start, end). `None` exports everything.
     pub range: Option<(Micros, Micros)>,
 }
@@ -148,6 +150,7 @@ impl ExportSettings {
             custom_kbps: None,
             codec: VideoCodec::H264,
             container: Container::Mp4,
+            use_hardware: true,
             range: None,
         }
     }

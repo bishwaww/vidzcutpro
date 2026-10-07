@@ -130,13 +130,21 @@ pub fn show(ui: &mut egui::Ui, ctx: &mut Ctx<'_>) {
                     ui.close();
                 }
             });
-            ui.add_enabled(false, egui::Button::new("Settings"))
-                .on_disabled_hover_text(COMING_SOON);
+            if ui.button("Settings").clicked() {
+                ctx.state.settings_ui.open = true;
+                ui.close();
+            }
             ui.menu_button("Help", |ui| {
-                ui.add_enabled(false, egui::Button::new("Keyboard shortcuts"))
-                    .on_disabled_hover_text(COMING_SOON);
-                ui.add_enabled(false, egui::Button::new("Open log folder"))
-                    .on_disabled_hover_text(COMING_SOON);
+                if ui.button("Keyboard shortcuts").clicked() {
+                    ctx.state.settings_ui.show_shortcuts();
+                    ui.close();
+                }
+                if ui.button("Open log folder").clicked() {
+                    let dir = log_dir();
+                    let _ = std::fs::create_dir_all(&dir);
+                    crate::export_dialog::open_folder(&dir);
+                    ui.close();
+                }
                 ui.label(
                     RichText::new(format!("vidzcut {}", env!("CARGO_PKG_VERSION")))
                         .color(theme::MUTED),
@@ -189,4 +197,13 @@ pub fn show(ui: &mut egui::Ui, ctx: &mut Ctx<'_>) {
             });
         });
     });
+}
+
+/// Where the log file is kept (the same place the program writes it).
+fn log_dir() -> std::path::PathBuf {
+    match std::env::var_os("VIDZCUT_LOG_DIR") {
+        Some(d) => std::path::PathBuf::from(d),
+        None => directories::ProjectDirs::from("", "", "vidzcut")
+            .map_or_else(std::env::temp_dir, |d| d.data_local_dir().join("logs")),
+    }
 }

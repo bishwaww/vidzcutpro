@@ -147,6 +147,8 @@ pub struct ExportDialog {
     caption_format: CaptionFormat,
     /// The window is shrunk to a small progress bar while the export runs.
     tucked_away: bool,
+    /// From Settings: let the graphics card make the video.
+    use_hardware: bool,
 }
 
 fn default_folder(settings: &UiSettings) -> PathBuf {
@@ -199,6 +201,7 @@ impl ExportDialog {
             picture_format: PictureFormat::Png,
             caption_format: CaptionFormat::Srt,
             tucked_away: false,
+            use_hardware: settings.prefs.hardware_encoder,
         }
     }
 
@@ -889,6 +892,7 @@ impl ExportDialog {
         if let Some(rate) = RATES[self.rate_index] {
             s.frame_rate = rate;
         }
+        s.use_hardware = self.use_hardware;
         s.range = self.range();
         s
     }
@@ -1032,6 +1036,19 @@ pub fn reveal_in_folder(path: &Path) {
     let result = std::process::Command::new("xdg-open")
         .arg(path.parent().unwrap_or(path))
         .spawn();
+    if let Err(e) = result {
+        tracing::warn!("could not open the folder: {e}");
+    }
+}
+
+/// Open a folder in the system's file manager.
+pub fn open_folder(dir: &Path) {
+    #[cfg(target_os = "windows")]
+    let result = std::process::Command::new("explorer").arg(dir).spawn();
+    #[cfg(target_os = "macos")]
+    let result = std::process::Command::new("open").arg(dir).spawn();
+    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+    let result = std::process::Command::new("xdg-open").arg(dir).spawn();
     if let Err(e) = result {
         tracing::warn!("could not open the folder: {e}");
     }

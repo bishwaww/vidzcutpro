@@ -53,7 +53,7 @@ pub struct ExportReport {
 }
 
 /// Encoders to try, best first.
-pub(crate) fn encoder_candidates(codec: VideoCodec) -> Vec<&'static str> {
+pub(crate) fn encoder_candidates(codec: VideoCodec, hardware: bool) -> Vec<&'static str> {
     let all: &[&str] = match (codec, cfg!(target_os = "macos")) {
         (VideoCodec::H264, true) => &["h264_videotoolbox", "libopenh264"],
         (VideoCodec::H264, false) => &["h264_nvenc", "h264_qsv", "h264_amf", "libopenh264"],
@@ -62,6 +62,8 @@ pub(crate) fn encoder_candidates(codec: VideoCodec) -> Vec<&'static str> {
     };
     all.iter()
         .copied()
+        // software encoders are the ones named lib…
+        .filter(|n| hardware || n.starts_with("lib"))
         .filter(|n| encoder::find_by_name(n).is_some())
         .collect()
 }
@@ -86,7 +88,7 @@ pub fn export(
     let frames_total = (rate.frame_at(end - 1) - first_frame + 1).max(1) as u64;
 
     let partial = partial_path(&settings.path);
-    let candidates = encoder_candidates(settings.codec);
+    let candidates = encoder_candidates(settings.codec, settings.use_hardware);
     if candidates.is_empty() {
         return Err(ExportError::NoEncoder("none are installed".into()));
     }

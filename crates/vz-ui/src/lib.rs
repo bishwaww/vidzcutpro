@@ -6,8 +6,10 @@ mod dev;
 mod editor;
 mod export_dialog;
 mod home;
+mod keymap;
 mod preview;
 mod settings;
+mod settings_window;
 mod theme;
 mod waveforms;
 
