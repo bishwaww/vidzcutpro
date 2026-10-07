@@ -250,6 +250,7 @@ fn snap_candidates(ctx: &Ctx<'_>, exclude: &[ClipId]) -> Vec<Micros> {
         for c in track.clips.iter().filter(|c| !exclude.contains(&c.id)) {
             points.push(c.start);
             points.push(c.end());
+            points.extend(c.beat_times());
         }
     }
     points

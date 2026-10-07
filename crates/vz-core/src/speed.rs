@@ -56,6 +56,27 @@ impl Clip {
         total.round() as Micros
     }
 
+    /// Where on the timeline the beats found in the media fall inside this clip.
+    pub fn beat_times(&self) -> Vec<Micros> {
+        if self.reverse || self.audio.beats.is_empty() {
+            return Vec::new();
+        }
+        let span = self.source_span();
+        let plain = !self.is_retimed();
+        self.audio
+            .beats
+            .iter()
+            .filter(|&&b| b >= self.source_in && b <= self.source_in + span)
+            .map(|&b| {
+                if plain {
+                    self.start + (b - self.source_in)
+                } else {
+                    self.start + self.duration_for_span(b - self.source_in)
+                }
+            })
+            .collect()
+    }
+
     /// How much media the whole clip uses.
     pub fn source_span(&self) -> Micros {
         self.advance(self.duration)

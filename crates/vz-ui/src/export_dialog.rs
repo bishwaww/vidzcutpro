@@ -8,7 +8,9 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
-use vz_export::{ExportError, ExportReport, ExportSettings, Progress, Quality};
+use vz_export::{
+    AudioExportSettings, AudioFormat, ExportError, ExportReport, ExportSettings, Progress, Quality,
+};
 
 /// Sizes offered (the short side of the picture).
 const SIZES: [(&str, u32); 5] = [
@@ -37,6 +39,9 @@ pub struct ExportDialog {
     folder: PathBuf,
     size_index: usize,
     quality: Quality,
+    /// `Some` exports only the sound, in this format.
+    audio_format: Option<AudioFormat>,
+    audio_kbps: usize,
 }
 
 fn default_folder(settings: &UiSettings) -> PathBuf {
@@ -70,6 +75,8 @@ impl ExportDialog {
             folder: default_folder(settings),
             size_index: 2, // 1080p
             quality: Quality::Recommended,
+            audio_format: None,
+            audio_kbps: 192,
         }
     }
 
@@ -85,8 +92,10 @@ impl ExportDialog {
     }
 
     fn output_path(&self) -> PathBuf {
-        let name = self.file_name.trim().trim_end_matches(".mp4");
-        self.folder.join(format!("{}.mp4", clean_name(name)))
+        let ext = self.audio_format.map_or("mp4", AudioFormat::extension);
+        let name = self.file_name.trim();
+        let name = name.strip_suffix(&format!(".{ext}")).unwrap_or(name);
+        self.folder.join(format!("{}.{ext}", clean_name(name)))
     }
 
     /// Draw the window. Returns true when it should be closed.
@@ -143,6 +152,67 @@ impl ExportDialog {
                                 }
                             });
                             ui.end_row();
+
+                            ui.label("Export");
+                            ui.horizontal(|ui| {
+                                if ui
+                                    .selectable_label(self.audio_format.is_none(), "Video")
+                                    .clicked()
+                                {
+                                    self.audio_format = None;
+                                }
+                                if ui
+                                    .selectable_label(self.audio_format.is_some(), "Audio only")
+                                    .clicked()
+                                    && self.audio_format.is_none()
+                                {
+                                    self.audio_format = Some(AudioFormat::Wav);
+                                }
+                            });
+                            ui.end_row();
+
+                            if let Some(format) = self.audio_format {
+                                ui.label("Format");
+                                egui::ComboBox::from_id_salt("export_audio_format")
+                                    .selected_text(format.label())
+                                    .show_ui(ui, |ui| {
+                                        for f in AudioFormat::ALL {
+                                            if f.is_available() {
+                                                ui.selectable_value(
+                                                    &mut self.audio_format,
+                                                    Some(f),
+                                                    f.label(),
+                                                );
+                                            }
+                                        }
+                                    });
+                                ui.end_row();
+                                if format.is_lossy() {
+                                    ui.label("Quality");
+                                    egui::ComboBox::from_id_salt("export_audio_rate")
+                                        .selected_text(format!("{} kbps", self.audio_kbps))
+                                        .show_ui(ui, |ui| {
+                                            for k in [96, 128, 192, 256, 320] {
+                                                ui.selectable_value(
+                                                    &mut self.audio_kbps,
+                                                    k,
+                                                    format!("{k} kbps"),
+                                                );
+                                            }
+                                        });
+                                    ui.end_row();
+                                }
+                                ui.label("Estimated size");
+                                let seconds = project.duration() as f64 / 1e6;
+                                let bytes = match format {
+                                    AudioFormat::Wav => 48_000.0 * 4.0 * seconds,
+                                    AudioFormat::Flac => 48_000.0 * 4.0 * seconds * 0.6,
+                                    _ => self.audio_kbps as f64 * 1000.0 / 8.0 * seconds,
+                                };
+                                ui.label(format!("{:.1} MB", bytes / 1e6));
+                                ui.end_row();
+                                return;
+                            }
 
                             ui.label("Resolution");
                             egui::ComboBox::from_id_salt("export_size")
@@ -217,13 +287,18 @@ impl ExportDialog {
                     } else {
                         "working…".to_string()
                     };
-                    ui.label(
-                        egui::RichText::new(format!(
+                    let progress_text = if self.audio_format.is_some() {
+                        format!("Writing the sound  ·  {eta_text}")
+                    } else {
+                        format!(
                             "Frame {} of {}  ·  {eta_text}",
                             p.frames_done, p.frames_total
-                        ))
-                        .color(theme::MUTED)
-                        .small(),
+                        )
+                    };
+                    ui.label(
+                        egui::RichText::new(progress_text)
+                            .color(theme::MUTED)
+                            .small(),
                     );
                     ui.add_space(8.0);
                     if ui.button("Cancel").clicked() {
@@ -301,6 +376,11 @@ impl ExportDialog {
         settings.export_dir = Some(self.folder.clone());
         settings.save();
         let export_settings = self.settings_for(project);
+        let audio = self.audio_format.map(|format| {
+            let mut a = AudioExportSettings::new(self.output_path(), format);
+            a.bit_rate = self.audio_kbps * 1000;
+            a
+        });
         let project = project.clone();
         let shared = Arc::new(Mutex::new(Progress {
             frames_done: 0,
@@ -313,16 +393,15 @@ impl ExportDialog {
             std::thread::Builder::new()
                 .name("vidzcut-export".into())
                 .spawn(move || {
-                    let result = vz_export::export(
-                        &project,
-                        &export_settings,
-                        &mut |p| {
-                            if let Ok(mut g) = shared.lock() {
-                                *g = p;
-                            }
-                        },
-                        &cancel,
-                    );
+                    let mut report = |p| {
+                        if let Ok(mut g) = shared.lock() {
+                            *g = p;
+                        }
+                    };
+                    let result = match audio {
+                        Some(a) => vz_export::export_audio(&project, &a, &mut report, &cancel),
+                        None => vz_export::export(&project, &export_settings, &mut report, &cancel),
+                    };
                     let _ = tx.send(result);
                 })
                 .expect("could not start the export thread");

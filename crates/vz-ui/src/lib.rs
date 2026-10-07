@@ -1,6 +1,7 @@
 //! Every panel the user sees (egui). See docs/ARCHITECTURE.md.
 
 mod app;
+mod audio_jobs;
 mod dev;
 mod editor;
 mod export_dialog;

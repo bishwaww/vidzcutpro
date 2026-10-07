@@ -23,7 +23,18 @@
 - `D:\Projects\vidzcut` — the old Python/Qt prototype v1.4.0 (**reference only**, don't copy architecture). Notes: `docs/PROTOTYPE_NOTES.md`. Real test video: `D:/Gloma/with track.mp4` (read-only).
 - Docs: `docs/SPEC.md`, `docs/ARCHITECTURE.md`, `docs/PROTOTYPE_NOTES.md`, `docs/BUILDING.md`, `ROADMAP.md`.
 
-## Current state (2026-10-03) — Phase 5 built, waiting for the owner's hand test (the owner said "OK, continue" after Phases 2, 3 and 4)
+## Current state (2026-10-07) — Phase 6 built (gate passed), waiting for the owner's hand test; Phase 5 hand test was never reported back
+### Phase 6 additions (read this first)
+- Model: `vz-core/src/audio_fx.rs` (`AudioFx` on every `Clip.audio`, all off by default and `#[serde(default)]`, so no project-format change: pan, `ChannelMode`, `Normalize{target,measured}`, `Denoise{amount, profile}`, `Eq` (5 bands, `EQ_PRESETS`), `Compressor`, `deess`, `Voice{effect,amount}` (11 `VoiceEffect`), `Duck`, `beats` in media-file time). `Clip::beat_times()` (`speed.rs`) maps beats to the timeline; the timeline snaps to them and draws ticks.
+- DSP: `vz-audio/src/fx/` (`biquad`, `eq`, `dynamics` = compressor / limiter / de-esser, `voice`, `fft`, `denoise` = `NoiseMeter` + `Denoiser`, 512-sample frames, 11 ms late, `loudness` = BS.1770 K-weighting + gates, `beats`, `mod.rs` = `Chain` in the order denoise → EQ → de-esser → compressor → voice). Everything works on interleaved stereo `f32`.
+- Mixer (`mixer.rs`): per-clip `ClipState` (chain, expected next sample; a seek or a settings change rebuilds the chain), `clip_sound()` = read → chain → `apply_gain` (channel, balance, normalise factor, volume, fades). Ducking = two passes: clips without `duck` first, then each ducked clip is lowered by the envelope of that first mix. Master `soft_limit` replaces the old hard clamp.
+- Measuring: `vz-audio/src/analysis.rs` (`analyse(path, from, length, Wanted{loudness,noise,beats})`), run by `vz-ui/src/audio_jobs.rs` in background threads (results are written into the clip as one undo step each; the same module extracts audio to WAV). Noise profiles are measured at 48 kHz and re-mapped for other mix rates (`profile_for_rate`).
+- Other audio files: `wav.rs` (16-bit WAV writer), `sfx.rs` (9 synthesised sound effects, no licences), `recorder.rs` (cpal microphone → mono WAV, `input_devices()`), `preview.rs` (listen to a file).
+- Export: `vz-export/src/audio.rs` (`export_audio`, `AudioFormat` Wav / Flac / Aac(m4a) / Mp3 via LAME, chunk = encoder frame size). The export dialog has Video / Audio only.
+- UI: `inspector/audio.rs` (Audio tab pages Basic / Clean-up / Voice effects; `EditorState.audio_page`), `editor/audio_panel.rs` (asset tab Audio: Music and Sound effects from user folders saved in `UiSettings.music_dirs / effect_dirs`, built-in effects, Extract audio, Voiceover with microphone choice, level meter, 3-2-1 countdown, play-along option). Files are kept in `<config or data dir>/audio/{effects,extracted,recordings}`.
+- Tests added: vz-audio 61 total (fx unit tests, `fx_tests.rs` through the real mixer), vz-core `audio_fx`, vz-export audio export (WAV/FLAC/AAC/MP3 + cancel). Checked in the real window: Audio tab pages, loudness measuring (−21.8 LUFS for the 440 Hz test clip), sound-effect list, extract audio, voice-over countdown. **Not checked by a person: real microphone recording, listening to the effects.**
+- Not done (see ROADMAP): noise / loudness for compound clips, retimed compound effects, volume automation drawn on the clip, J/L cuts ("detach audio"), latency compensation while recording, pitch-shift quality is "voice effect" grade (granular), de-esser is a broadband gain.
+
 
 ### Phase 5 additions (read this first)
 - Shapes: `vz-core/src/content.rs` (`ShapeKind` 16 kinds, `ShapeContent` gradient / `StrokePlace` / dash / `LineCap` / `LineJoin` / sides / points / inner / trim_* / `path: Option<PenPath>`; `PenNode` = point + in/out handles as offsets in shares of the box). Drawing in `vz-vector` (tiny-skia: gradients, stroke inside/outside via `Mask`, dashes, own trim-path code on a flattened path).
@@ -90,7 +101,7 @@
 - FFmpeg n9.0 **LGPL shared** (BtbN build) in `third_party\ffmpeg` (git-ignored). Matches crate `ffmpeg-next 9.0.0`. Has h264/hevc/av1 nvenc/qsv/amf + libopenh264; no x264/x265 (good).
 
 ## Known issues
-- The Audio tab (Phase 6) and the Templates tab (Phase 7) are placeholders ("Coming in Phase N"); the Library / Subprojects / Voiceover sub-menus too. Variable fonts are used at their default weight in the interface (video text selects bold properly).
+- The Templates tab (Phase 7) is a placeholder ("Coming in Phase 7"); the Library / Subprojects sub-menus too. Variable fonts are used at their default weight in the interface (video text selects bold properly).
 
 ## Next step
-Owner runs the Phase 5 checklist in `docs/TESTING.md` and says OK or reports problems → **Phase 6** (pro audio: loudness normalise, noise reduction, EQ, compressor, voice effects, ducking, beat detection + snap, voice-over recording, audio-only export).
+Owner runs the **Phase 6** checklist (and the still-open Phase 5 checklist) in `docs/TESTING.md` and says OK or reports problems → **Phase 7** (export options, hardware encoders, proxies, settings, shortcut editor, user templates, installers).

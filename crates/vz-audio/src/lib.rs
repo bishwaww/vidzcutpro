@@ -4,12 +4,19 @@
 //! Phase 1: the timeline's sound is read from the media files, mixed and played; the sound
 //! card's clock is the master clock. Effects arrive in Phase 6.
 
+pub mod analysis;
 pub mod engine;
+pub mod fx;
 pub mod mixer;
+pub mod preview;
 pub mod reader;
+pub mod recorder;
 pub mod retime;
+pub mod sfx;
+pub mod wav;
 pub mod waveform;
 
+pub use analysis::{Analysis, Wanted, analyse};
 pub use engine::AudioEngine;
 pub use mixer::{Mixer, micros_to_samples, samples_to_micros};
 pub use reader::{AudioError, AudioReader};
@@ -17,6 +24,9 @@ pub use waveform::Waveform;
 
 /// Name of this crate, used in diagnostics.
 pub const CRATE: &str = "vz-audio";
+
+#[cfg(test)]
+mod fx_tests;
 
 #[cfg(test)]
 mod tests {

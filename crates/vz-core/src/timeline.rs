@@ -1,5 +1,6 @@
 //! Timelines, tracks and clips.
 
+use crate::audio_fx::AudioFx;
 use crate::content::{Content, ShapeContent, TextContent};
 use crate::grade::{Adjust, ChromaKey, EffectRef, MaskDef};
 use crate::ids::{ClipId, GroupId, LinkId, MarkerId, MediaId, TimelineId, TrackId};
@@ -80,6 +81,9 @@ pub struct Clip {
     pub anim_out: Option<AnimRef>,
     #[serde(default)]
     pub anim_combo: Option<AnimRef>,
+    /// Sound processing: loudness, noise reduction, equaliser, compressor, voice effects, ducking.
+    #[serde(default)]
+    pub audio: AudioFx,
 }
 
 impl Clip {
@@ -109,6 +113,7 @@ impl Clip {
             speed: one(),
             reverse: false,
             keep_pitch: true,
+            audio: AudioFx::default(),
         }
     }
 

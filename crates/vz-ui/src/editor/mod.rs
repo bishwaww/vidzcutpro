@@ -1,6 +1,7 @@
 //! The editing screen: top bar, asset panel, player, inspector and timeline.
 
 mod assets;
+mod audio_panel;
 mod canvas;
 mod caption_panel;
 mod geometry;
@@ -88,6 +89,10 @@ pub struct EditorState {
     pub scope_texture: Option<egui::TextureHandle>,
     /// Which part of the Adjust tab is open, which colour band and which curve.
     pub adjust_part: inspector::AdjustPart,
+    /// Which page of the Audio tab is open, and the sound measurements running in the background.
+    pub audio_page: inspector::AudioPage,
+    pub audio_jobs: crate::audio_jobs::AudioJobs,
+    pub audio_panel: audio_panel::PanelState,
     pub hsl_band: usize,
     pub curve_channel: usize,
     /// The Speed tab shows the curve editor (also when the speed has no curve yet).
@@ -147,6 +152,9 @@ impl Default for EditorState {
             shown_frame: None,
             scope_texture: None,
             adjust_part: inspector::AdjustPart::default(),
+            audio_page: inspector::AudioPage::default(),
+            audio_jobs: crate::audio_jobs::AudioJobs::default(),
+            audio_panel: audio_panel::PanelState::default(),
             hsl_band: 0,
             curve_channel: 0,
             speed_curve_mode: false,
@@ -244,6 +252,9 @@ pub fn show(ui: &mut egui::Ui, ctx: &mut Ctx<'_>) -> bool {
     let id = |name: &str| format!("{}-{name}-{layout_gen}", layout.key());
     let total = ui.available_size();
 
+    for message in ctx.state.audio_jobs.poll(ctx.doc) {
+        ctx.state.say(message);
+    }
     handle_keys(ui.ctx(), ctx);
 
     Panel::top(id("topbar"))

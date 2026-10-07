@@ -56,6 +56,13 @@ pub struct UiSettings {
     /// The folder the last export went to.
     #[serde(default)]
     pub export_dir: Option<PathBuf>,
+    /// Folders with music and with sound effects shown in the Audio tab, and the chosen microphone.
+    #[serde(default)]
+    pub music_dirs: Vec<PathBuf>,
+    #[serde(default)]
+    pub effect_dirs: Vec<PathBuf>,
+    #[serde(default)]
+    pub mic: Option<String>,
 }
 
 impl UiSettings {

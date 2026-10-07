@@ -191,6 +191,8 @@ pub fn show(ui: &mut egui::Ui, ctx: &mut Ctx<'_>) {
                 super::caption_panel::show(ui, ctx);
             } else if ctx.state.category == Category::Transitions {
                 super::transition_panel::show(ui, ctx);
+            } else if ctx.state.category == Category::Audio {
+                super::audio_panel::show(ui, ctx);
             } else if ctx.state.category == Category::Stickers {
                 super::sticker_panel::show(ui, ctx);
             } else {

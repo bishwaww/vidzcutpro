@@ -204,3 +204,34 @@ You need: a video clip on the timeline. For captions, also a small `.srt` file (
 20. **Export** (Ctrl+E): captions, templates, shapes and compound clips in the MP4 must match the player.
 
 **Please tell me:** anything that looks wrong in text or captions (especially Sinhala), pen tool handling that feels awkward, slowness while playing compound clips (they are drawn twice), and anything confusing.
+
+## Phase 6 — your checklist
+
+You need: a video with talking or music on the timeline (the Audio tab works on video clips that have sound and on audio clips). Use **headphones** for the voice-over test.
+
+**Basic sound**
+1. Select a clip → **Audio** tab → **Basic**. Move **Volume**, **Fade in / Fade out**, **Balance** (all the way right: only the right ear hears it) and **Channels** (Left only / Right only / Mono).
+2. Tick **Normalize loudness**. It says "Measuring…", then "Measured … LUFS, so +x dB". Try **Social −14** and **TV −23**: quiet clips get louder, loud clips quieter. Put two clips of different loudness next to each other and normalise both: they should sound equally loud.
+
+**Clean-up**
+3. **Clean-up** page → **Noise reduction**: use a clip with hiss, fan or hum. Tick it, wait for "Noise measured", raise **Strength**. The noise should fade and the voice stay clear. Too strong makes the voice "watery" — tell me where that starts.
+4. **Equaliser**: pick **Voice boost**, **Bass boost**, **Small speaker**; drag the five sliders and watch the yellow curve.
+5. **Compressor and limiter**: tick it on a clip with loud and quiet parts; they come closer together. **De-esser**: raise it on a voice with sharp "s" sounds.
+6. **Auto ducking**: put a music clip on an audio track and a voice clip on another. On the **music** clip tick **Auto ducking**. The music should dip while the voice speaks and come back after.
+
+**Voice effects**
+7. **Voice effects** page: try **Chipmunk**, **Deep voice**, **Robot**, **Echo**, **Room**, **Hall**, **Telephone**, **Megaphone**, **Radio**, **Underwater**, **Vibrato**, each with the **Amount** slider. Tell me which ones sound bad.
+
+**Beats**
+8. Select a music clip → **Basic** → **Beats** → **Find beats**. It says how many beats and the beats per minute. Thin yellow ticks appear along the bottom of the clip. Drag another clip near a tick with **Snap** on: it should stick to the beat.
+
+**Audio tab (left)**
+9. **Audio → Sound effects**: press ▶ to listen to the nine built-in effects; click **+** (or double-click the name) to put one on a new audio track at the playhead.
+10. **Music / Sound effects**: **Add a folder…** and choose a folder with sound files; they are listed, can be listened to and added. The **×** next to a folder name forgets it.
+11. **Extract audio**: press **Extract** next to a video; "Added … to your media" appears and the new sound file shows in **Media**.
+12. **Voiceover**: choose your microphone, press **Record** (3-2-1 countdown), speak, press **Stop and add**. A new audio track with your voice appears at the playhead. Try the "Play the project while recording" box with headphones. **Tell me if the voice is late or early compared with the picture.**
+
+**Export**
+13. **Export** (Ctrl+E) → **Audio only** → try **WAV**, **FLAC**, **AAC (M4A)** and **MP3**; play the files in any player. Then export the video and check that all the effects above sound the same as in the player.
+
+**Please tell me:** effects that sound bad, noise reduction that damages the voice, anything slow or crackling during playback with many effects, and anything confusing.

@@ -75,9 +75,19 @@ Legend: `[x]` done · `[ ]` to do · `[-]` skipped on purpose (reason given)
 - [x] Compound clips (Alt+G, double-click to open) and several timelines (tabs: add, rename, copy, delete); sound and picture of a compound play inside the parent; undo goes back to the timeline the change was made in
 - [ ] Not yet: SVG sticker import (needs your OK for the MPL-2.0 `resvg` library), mask drawn on the picture with the pen, keyframes for shape / path values, "break apart" a compound clip, retimed compound clips have no sound, shape / pen presets of your own, user text templates (Phase 7 "My templates")
 
-## Phase 6 — Pro audio
-- [ ] Loudness normalize, noise reduction, EQ, compressor, voice effects, ducking
-- [ ] Beat detection + snap to beats, voiceover recording, audio-only export
+## Phase 6 — Pro audio  (built 2026-10-07, waiting for the owner's hand test)
+- [x] Loudness: measured by the EBU R128 / BS.1770 method (LUFS), "Normalize loudness" with Social −14 / TV −23 / your own target; the measuring runs in the background and the gain is stored in the clip
+- [x] Noise reduction: the background noise is measured from the quietest parts of the clip, then taken away (spectral gate) with a strength slider; works the same in the player and in the export
+- [x] Equaliser (5 bands with 8 presets and a live curve), compressor + limiter, de-esser
+- [x] Voice effects (11): chipmunk, deep voice, robot, echo, room, hall, telephone, megaphone, radio, underwater, vibrato, each with an Amount slider
+- [x] Auto ducking: a clip with "Auto ducking" turned on gets quieter while any other clip makes sound (amount, attack, release)
+- [x] Balance (pan) and channels (stereo / left only / right only / mono)
+- [x] Beat finding: tempo and beat grid of music, ticks drawn on the clip, dragged clips snap to the beats
+- [x] Audio tab of the asset panel: music and sound-effect folders (your own), 9 built-in sound effects made by vidzcut (whoosh, pop, click, swoosh, ding, camera shutter, typing, riser, impact), listen before adding, extract audio from a video, voice-over recording (microphone choice, level meter, 3-2-1 countdown, optional "play the project while recording")
+- [x] Audio-only export: WAV, FLAC, AAC (M4A), and MP3 (uses the LGPL LAME encoder in our FFmpeg build)
+- [x] The final mix has a soft limiter instead of a hard clip
+- [ ] Not yet: noise reduction and loudness for compound clips; effects on retimed compound clips; volume automation drawn on the clip; "detach audio" (J/L cuts); recording while the preview is playing is not latency-compensated (a small delay is possible); noise profile cannot be drawn / edited
+
 
 ## Phase 7 — Export & polish
 - [ ] All export options (§11.1), hardware encoders, proxies, hardware decode, render cache

@@ -537,3 +537,50 @@ fn colour_effects_masks_and_adjustment_layers_are_in_the_exported_file() {
         "{colourful} coloured pixels"
     );
 }
+
+#[test]
+fn audio_only_export_writes_playable_files_of_the_right_length() {
+    let doc = doc_with(&[testutil::standard()]); // 4 s with a 440 Hz tone
+    for format in AudioFormat::ALL {
+        if !format.is_available() {
+            continue;
+        }
+        let path = temp_out(&format!("sound.{}", format.extension()));
+        let settings = AudioExportSettings::new(path.clone(), format);
+        let mut last = None;
+        let report = export_audio(
+            &doc.project,
+            &settings,
+            &mut |p| last = Some(p),
+            &AtomicBool::new(false),
+        )
+        .unwrap_or_else(|e| panic!("{format:?}: {e}"));
+        assert!(
+            report.bytes > 1000,
+            "{format:?} wrote {} bytes",
+            report.bytes
+        );
+        assert!(last.is_some());
+        let info = probe_json(&path);
+        let streams = info["streams"].as_array().unwrap();
+        assert_eq!(streams.len(), 1, "{format:?} must have only sound");
+        assert_eq!(streams[0]["codec_type"], "audio");
+        assert_eq!(streams[0]["channels"], 2);
+        let seconds: f64 = info["format"]["duration"]
+            .as_str()
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert!((seconds - 4.0).abs() < 0.1, "{format:?} lasts {seconds} s");
+    }
+}
+
+#[test]
+fn audio_only_export_can_be_cancelled_and_leaves_no_file() {
+    let doc = doc_with(&[testutil::standard()]);
+    let path = temp_out("cancelled.wav");
+    let settings = AudioExportSettings::new(path.clone(), AudioFormat::Wav);
+    let result = export_audio(&doc.project, &settings, &mut |_| {}, &AtomicBool::new(true));
+    assert!(matches!(result, Err(ExportError::Cancelled)));
+    assert!(!path.exists());
+}

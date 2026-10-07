@@ -3,6 +3,7 @@
 //! This crate has no window, no GPU and no FFmpeg, so it can be tested very fast.
 //! See docs/ARCHITECTURE.md.
 
+pub mod audio_fx;
 pub mod captions;
 pub mod command;
 pub mod content;
@@ -17,6 +18,10 @@ pub mod speed;
 pub mod time;
 pub mod timeline;
 
+pub use audio_fx::{
+    AudioFx, ChannelMode, Compressor, Denoise, Duck, EQ_BANDS, EQ_FREQS, EQ_PRESETS, Eq, Normalize,
+    Voice, VoiceEffect,
+};
 pub use command::{Command, History, MergeKey, TrackFlags};
 pub use content::{
     Content, LineCap, LineJoin, PenNode, PenPath, ShapeContent, ShapeKind, StrokePlace, StyleSpan,

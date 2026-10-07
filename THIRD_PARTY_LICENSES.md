@@ -29,6 +29,7 @@ Status (2026-10-03, end of Phase 2): **direct dependencies only**. A full check 
 |---|---|---|
 | FFmpeg n9.0 (pre-built by BtbN, "lgpl-shared" build) | **LGPL-3.0** (built with `--enable-version3`, no `--enable-gpl`, x264/x265 disabled) | decode/encode; dynamically linked (DLLs next to vidzcut.exe). We must ship the licence text, say that vidzcut uses FFmpeg, and offer the FFmpeg source. Not committed to git (`third_party/`), downloaded by `scripts/setup-windows.ps1`. |
 | OpenH264 (inside that FFmpeg build as `libopenh264`) | BSD-2-Clause; Cisco's patent licence applies to Cisco's own binary | planned software H.264 fallback. **Licence and patent terms to be confirmed with the owner before release.** |
+| LAME (`libmp3lame`, also inside that FFmpeg build) | **LGPL-2.1+** | MP3 audio export. Same rules as FFmpeg: dynamically linked, licence text shipped. No new Rust dependencies were added in Phase 6 (own FFT, filters, loudness meter, WAV writer; `cpal` was already used). |
 
 ## Fonts (bundled in `assets/fonts/`, downloaded 2026-10-03 from the Google Fonts repository)
 | Font | Licence | Used for |

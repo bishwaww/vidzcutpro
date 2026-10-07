@@ -486,6 +486,18 @@ fn clip_body(
         clipped.rect_filled(rect, round, Color32::from_black_alpha(110));
     }
 
+    // beats found in the sound: thin ticks along the bottom edge
+    if !clip.audio.beats.is_empty() && clip.duration > 0 {
+        for t in clip.beat_times() {
+            let x = rect.left() + rect.width() * ((t - clip.start) as f32 / clip.duration as f32);
+            clipped.vline(
+                x,
+                (rect.bottom() - 9.0)..=rect.bottom(),
+                Stroke::new(1.0, theme::ACCENT),
+            );
+        }
+    }
+
     // keyframes: small diamonds along the bottom edge of the selected clip
     if selected && clip.duration > 0 {
         let props = [

@@ -223,7 +223,9 @@ fn section_title(ui: &mut egui::Ui, title: &str) {
 }
 
 mod adjust;
+mod audio;
 pub use adjust::Part as AdjustPart;
+pub use audio::Page as AudioPage;
 mod animation;
 mod looks;
 mod shape;
@@ -317,7 +319,7 @@ fn clip_tabs(ui: &mut egui::Ui, ctx: &mut Ctx<'_>, clip: &Clip) {
             ui.add_space(6.0);
             looks::chroma_section(ui, ctx, clip);
         }
-        Tab::Audio => audio_section(ui, ctx, clip),
+        Tab::Audio => audio::audio_section(ui, ctx, clip),
         Tab::Text => text::text_section(ui, ctx, clip),
         Tab::Shape => shape::shape_section(ui, ctx, clip),
         Tab::Speed => speed::speed_section(ui, ctx, clip),
@@ -838,70 +840,6 @@ fn from_db(db: f32) -> f32 {
     } else {
         10f32.powf(db / 20.0)
     }
-}
-
-fn audio_section(ui: &mut egui::Ui, ctx: &mut Ctx<'_>, clip: &Clip) {
-    let id = clip.id;
-    ui.horizontal(|ui| {
-        section_title(ui, "Basic");
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui.small_button("↺ Reset").clicked() {
-                change(ctx, id, "Reset sound", |c| {
-                    c.volume = 1.0.into();
-                    c.fade_in = 0;
-                    c.fade_out = 0;
-                });
-            }
-        });
-    });
-    let half = (clip.duration as f32 / 1_000_000.0 / 2.0).max(0.1);
-    egui::Grid::new("audio_grid")
-        .num_columns(2)
-        .spacing(vec2(14.0, 8.0))
-        .min_col_width(80.0)
-        .show(ui, |ui| {
-            anim_slider(
-                ui,
-                ctx,
-                clip,
-                &[Prop::Volume],
-                "Volume",
-                -60.0..=12.0,
-                " dB",
-                1,
-                (to_db, from_db),
-            );
-            slider(
-                ui,
-                ctx,
-                id,
-                "Fade in",
-                "Fade in",
-                clip.fade_in as f32 / 1e6,
-                0.0..=half,
-                " s",
-                1,
-                |c, v| c.fade_in = (f64::from(v) * 1e6) as Micros,
-            );
-            slider(
-                ui,
-                ctx,
-                id,
-                "Fade out",
-                "Fade out",
-                clip.fade_out as f32 / 1e6,
-                0.0..=half,
-                " s",
-                1,
-                |c, v| c.fade_out = (f64::from(v) * 1e6) as Micros,
-            );
-        });
-    ui.add_space(6.0);
-    ui.label(
-        RichText::new("−60 dB is silent, 0 dB is the original level.")
-            .color(theme::MUTED)
-            .small(),
-    );
 }
 
 fn clip_details(ui: &mut egui::Ui, ctx: &Ctx<'_>, clip: &Clip) {

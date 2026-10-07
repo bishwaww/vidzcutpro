@@ -8,7 +8,7 @@ use vz_presets::effects::{Group, effects, find};
 
 /// A slider for a number somewhere in a clip, changed through `apply`. Changes of one drag are one undo step.
 #[allow(clippy::too_many_arguments)]
-fn num(
+pub(super) fn num(
     ui: &mut egui::Ui,
     ctx: &mut Ctx<'_>,
     id: ClipId,

@@ -4,8 +4,10 @@
 //! so the file matches the preview. Encoders are tried in order (graphics-card encoders first, then the
 //! software OpenH264) and the first one that works is used.
 
+mod audio;
 mod encode;
 
+pub use audio::{AudioExportSettings, AudioFormat, export_audio};
 pub use encode::{Cancelled, ExportError, ExportReport, Progress, export};
 
 use std::path::PathBuf;
