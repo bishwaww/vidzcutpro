@@ -17,6 +17,7 @@ pub mod project;
 pub mod speed;
 pub mod time;
 pub mod timeline;
+pub mod user_template;
 
 pub use audio_fx::{
     AudioFx, ChannelMode, Compressor, Denoise, Duck, EQ_BANDS, EQ_FREQS, EQ_PRESETS, Eq, Normalize,
@@ -47,6 +48,7 @@ pub use project::{AspectPreset, Background, Canvas, FORMAT_VERSION, LoadError, P
 pub use time::{FrameRate, Micros, US_PER_SEC};
 pub use timeline::{Clip, Layer, Marker, Timeline, Track, TrackKind};
 pub use timeline::{LayerTransition, Transition};
+pub use user_template::{TemplateError, UserTemplate};
 
 /// Name of this crate, used in diagnostics.
 pub const CRATE: &str = "vz-core";

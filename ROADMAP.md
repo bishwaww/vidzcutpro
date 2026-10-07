@@ -89,10 +89,13 @@ Legend: `[x]` done · `[ ]` to do · `[-]` skipped on purpose (reason given)
 - [ ] Not yet: noise reduction and loudness for compound clips; effects on retimed compound clips; volume automation drawn on the clip; "detach audio" (J/L cuts); recording while the preview is playing is not latency-compensated (a small delay is possible); noise profile cannot be drawn / edited
 
 
-## Phase 7 — Export & polish
-- [ ] All export options (§11.1), hardware encoders, proxies, hardware decode, render cache
-- [ ] Settings, shortcut editor, templates (save/use), home polish, error dialogs
-- [ ] Installers (Windows + macOS), first-run sample project, `THIRD_PARTY_LICENSES.md` complete
+## Phase 7 — Export & polish  (7a–7c built 2026-10-08, waiting for the owner's hand test; 7d–7e still to do)
+- [x] 7a Export window with five pages: **Video** (presets for YouTube 1080p / 4K, TikTok-Reels-Shorts, Facebook, Instagram 1:1 and 4:5, WhatsApp; resolution incl. custom; frame rate 24-60; quality Lower / Recommended / Higher or a custom kbps; H.264 or HEVC; MP4 or MOV; whole timeline or the selected clips; size estimate), **Sound only** (WAV, FLAC, AAC, MP3), **GIF** (size, pictures per second, dithering, repeat), **Picture** (PNG / JPG of the playhead, also from "Save picture" in the player), **Captions** (SRT, WebVTT, text). The export runs in the background: "Keep editing" tucks the window into a small progress bar.
+- [x] 7b Settings window (Menu → Settings): crash-recovery save interval, interface size (75-150 %), hardware encoder on/off, storage sizes + clear the sound-effect cache; **keyboard shortcut editor** (20 commands, two sets: vidzcut and Premiere-style, click and press the new keys, clash detection, reset). Help menu: Keyboard shortcuts, Open log folder.
+- [x] 7c My templates (Templates tab): save the selected text / shapes / effect layers with a name, add them to any project later (positions follow the canvas size); Starter templates = the nine built-in ones. Home screen: new project in a chosen shape (16:9 / 9:16 / 1:1 / 4:5), a Sample project, Settings button. Problem window for failed open / save / restore (plain words, copy details, open log folder).
+- [ ] 7d Speed: proxies, hardware decode, render cache (nothing is hidden or fake: the Details panel still shows a disabled "Use proxies" switch)
+- [ ] 7e Installers for Windows and macOS (`cargo-packager`), first-run polish, `THIRD_PARTY_LICENSES.md` final check; Sinhala interface text file; UI accent colour
+- [ ] Not yet in 7a-7c: ProRes export (needs macOS), in / out points for export, saving export settings between sessions, templates with pictures or video, rename a template
 
 ## Phase 8 — Motion graphics extras
 - [ ] Graph editor, motion paths on canvas, parenting/null layers

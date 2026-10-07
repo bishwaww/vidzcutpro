@@ -222,6 +222,16 @@ impl<T: Default> Default for Animatable<T> {
     }
 }
 
+impl Animatable<f32> {
+    /// Multiply the fixed value, or every keyframe's value, by `factor` (for example when a layer moves to a bigger canvas).
+    pub fn scale_values(&mut self, factor: f32) {
+        match self {
+            Self::Static(v) => *v *= factor,
+            Self::Keyframed(keys) => keys.iter_mut().for_each(|k| k.value *= factor),
+        }
+    }
+}
+
 impl<T: Lerp> Animatable<T> {
     /// The fixed value (or the first keyframe's value when animated). For editing screens that show one number.
     pub fn first(&self) -> Option<T> {

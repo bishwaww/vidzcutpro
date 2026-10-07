@@ -5,6 +5,7 @@ use eframe::egui::{
     self, Align2, CornerRadius, FontId, Panel, RichText, Sense, Stroke, StrokeKind, vec2,
 };
 use std::path::PathBuf;
+use vz_core::AspectPreset;
 
 /// One entry of the "Recent projects" list.
 pub struct RecentItem {
@@ -19,6 +20,11 @@ pub struct RecentItem {
 pub enum Action {
     None,
     CreateProject,
+    /// A new project in a chosen picture shape.
+    CreateWithAspect(AspectPreset),
+    /// A ready-made project to look around in.
+    OpenSample,
+    OpenSettings,
     OpenDialog,
     Open(PathBuf),
     RemoveRecent(PathBuf),
@@ -45,10 +51,13 @@ pub fn show(ui: &mut egui::Ui, logo: &egui::TextureHandle, recent: &[RecentItem]
                         egui::Button::new(RichText::new("Home").color(theme::ACCENT).strong())
                             .fill(theme::ACCENT_DARK),
                     );
-                    ui.add_enabled_ui(false, |ui| {
-                        ui.add_sized([ui.available_width(), 34.0], egui::Button::new("Settings"))
-                            .on_disabled_hover_text("Coming soon");
-                    });
+                    ui.add_space(6.0);
+                    if ui
+                        .add_sized([ui.available_width(), 34.0], egui::Button::new("Settings"))
+                        .clicked()
+                    {
+                        action = Action::OpenSettings;
+                    }
                 });
             ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
                 ui.add_space(14.0);
@@ -126,9 +135,58 @@ pub fn show(ui: &mut egui::Ui, logo: &egui::TextureHandle, recent: &[RecentItem]
                         if resp.clicked() {
                             action = Action::OpenDialog;
                         }
+
+                        ui.add_space(12.0);
+                        let (rect, resp) =
+                            ui.allocate_exact_size(vec2(180.0, 120.0), Sense::click());
+                        let stroke = if resp.hovered() {
+                            Stroke::new(1.5, theme::ACCENT)
+                        } else {
+                            Stroke::new(1.0, theme::BORDER)
+                        };
+                        ui.painter()
+                            .rect_filled(rect, CornerRadius::same(16), theme::PANEL);
+                        ui.painter().rect_stroke(
+                            rect,
+                            CornerRadius::same(16),
+                            stroke,
+                            StrokeKind::Inside,
+                        );
+                        ui.painter().text(
+                            rect.center() - vec2(0.0, 8.0),
+                            Align2::CENTER_CENTER,
+                            "Sample project",
+                            FontId::proportional(15.0),
+                            theme::TEXT,
+                        );
+                        ui.painter().text(
+                            rect.center() + vec2(0.0, 14.0),
+                            Align2::CENTER_CENTER,
+                            "Look around, then change it",
+                            FontId::proportional(11.0),
+                            theme::MUTED,
+                        );
+                        if resp.clicked() {
+                            action = Action::OpenSample;
+                        }
                     });
 
-                    ui.add_space(32.0);
+                    ui.add_space(14.0);
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("New project shape:").color(theme::MUTED));
+                        for (label, preset) in [
+                            ("16:9 wide", AspectPreset::Wide16x9),
+                            ("9:16 tall (TikTok, Reels)", AspectPreset::Tall9x16),
+                            ("1:1 square", AspectPreset::Square1x1),
+                            ("4:5 portrait", AspectPreset::Portrait4x5),
+                        ] {
+                            if ui.button(label).clicked() {
+                                action = Action::CreateWithAspect(preset);
+                            }
+                        }
+                    });
+
+                    ui.add_space(26.0);
                     ui.label(RichText::new("Recent projects").size(18.0).strong());
                     ui.add_space(10.0);
 

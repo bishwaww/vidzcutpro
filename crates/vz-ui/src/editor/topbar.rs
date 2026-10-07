@@ -200,7 +200,7 @@ pub fn show(ui: &mut egui::Ui, ctx: &mut Ctx<'_>) {
 }
 
 /// Where the log file is kept (the same place the program writes it).
-fn log_dir() -> std::path::PathBuf {
+pub(crate) fn log_dir() -> std::path::PathBuf {
     match std::env::var_os("VIDZCUT_LOG_DIR") {
         Some(d) => std::path::PathBuf::from(d),
         None => directories::ProjectDirs::from("", "", "vidzcut")

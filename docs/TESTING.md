@@ -235,3 +235,26 @@ You need: a video with talking or music on the timeline (the Audio tab works on 
 13. **Export** (Ctrl+E) → **Audio only** → try **WAV**, **FLAC**, **AAC (M4A)** and **MP3**; play the files in any player. Then export the video and check that all the effects above sound the same as in the player.
 
 **Please tell me:** effects that sound bad, noise reduction that damages the voice, anything slow or crackling during playback with many effects, and anything confusing.
+
+## Phase 7 (parts a to c) — your checklist
+
+**Export (Ctrl+E)**
+1. **Video** page: pick the preset **TikTok / Reels / Shorts**. If your project is 16:9 a yellow note tells you the shape does not match (change **Aspect ratio** in Details first for a real 9:16 file). Pick **YouTube 1080p** and export; play the MP4.
+2. Try **Video format → HEVC** and **File type → MOV** (HEVC may be slower); check the file plays in your player (VLC, Windows Media Player). Try **Quality → Custom bit rate** and a **Frame rate** of 30.
+3. Select two clips on the timeline, open Export, choose **Selected clips**: only that part is made.
+4. While an export runs press **Keep editing**: a small bar at the bottom right shows the progress. **Show** brings the window back; **Cancel** stops.
+5. **GIF** page: make a 5-second GIF at 360p, once with each **Dithering** choice. Open it in a browser. Tell me which dithering looks best.
+6. **Picture** page (or the **Save picture** button above the player): a PNG and a JPG of the picture at the playhead.
+7. **Captions** page: needs captions on the timeline; save SRT / WebVTT / text.
+
+**Settings (Menu → Settings, or the Settings button on the home screen)**
+8. **General**: change the recovery-save time. **Appearance**: make the interface 125 % and back to 100 %. **Storage**: sizes show; **Open folder** works.
+9. **Shortcuts**: change **Split at the playhead** to the **X** key (click the button, press X): X now splits. Try giving it **Ctrl+S**: a message says it is taken. Choose the **Premiere-style** set. **Reset all** puts things back.
+10. **Help → Keyboard shortcuts** opens that page; **Help → Open log folder** opens the folder with vidzcut.log.
+
+**Templates and home**
+11. Add a text (Text tab), select it, then **Templates → My templates**: type a name and press **Save template**. A tile appears; click it to add it again, right-click to delete. Try with a Sinhala text. Start a new project in 9:16 and use the template: it should sit in the right place.
+12. Home screen: **16:9 / 9:16 / 1:1 / 4:5** buttons start a project in that shape; **Sample project** opens a small ready-made project (press Space to play, click a title, change its words).
+13. Make a problem on purpose: save a project into a folder and delete that folder, then press Save. A window explains it in plain words with **Copy details** and **Open log folder**.
+
+**Please tell me:** anything that looks wrong in an exported file, GIF quality, slow HEVC, shortcuts that do not work, and anything confusing in the new windows.

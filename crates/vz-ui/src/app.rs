@@ -40,6 +40,12 @@ enum Dialog {
     Recover(Vec<RecoveryItem>),
     /// The window was asked to close while there are unsaved changes.
     Quit,
+    /// Something went wrong that the user should read about: what happened, in plain words, and the technical details.
+    Problem {
+        title: String,
+        plain: String,
+        details: String,
+    },
 }
 
 pub struct VidzApp {
@@ -210,6 +216,40 @@ impl VidzApp {
         self.set_document(Document::new(Project::new("Untitled project")));
     }
 
+    /// A new, empty project in the chosen picture shape.
+    fn new_project_with(&mut self, preset: vz_core::AspectPreset) {
+        let mut project = Project::new("Untitled project");
+        project.set_aspect(preset);
+        // the user chose the shape: the first clip must not change it
+        project.auto_settings = false;
+        self.set_document(Document::new(project));
+    }
+
+    /// A ready-made project made only of text and shapes (no media files needed), to look around in.
+    fn open_sample(&mut self) {
+        let mut project = Project::new("Sample project");
+        project.background = vz_core::Background::Color([24, 30, 48, 255]);
+        project.auto_settings = false;
+        let mut doc = Document::new(project);
+        let (w, h) = (project_width(&doc), project_height(&doc));
+        let all = vz_presets::templates::templates();
+        for (id, at_seconds) in [
+            ("title_underline", 0.0),
+            ("sinhala_card", 4.5),
+            ("lower_third", 10.0),
+            ("subscribe", 14.5),
+        ] {
+            if let Some(t) = all.iter().find(|t| t.id == id) {
+                let _ = doc.add_group(t.build(w, h), (at_seconds * 1e6) as Micros, "Sample");
+            }
+        }
+        self.set_document(doc);
+        // show the first title once it has faded in
+        self.editor.playhead = 1_800_000;
+        self.editor
+            .say("This is a sample. Click a layer, change its text, press Space to play.");
+    }
+
     fn open_path(&mut self, path: &Path) {
         match Document::open(path) {
             Ok(doc) => {
@@ -220,7 +260,15 @@ impl VidzApp {
                     self.editor.say(format!("{} media file(s) could not be found. Right-click them in the Media tab to relink.", self.missing.len()));
                 }
             }
-            Err(e) => self.editor.say(format!("Could not open the project: {e}")),
+            Err(e) => self.problem(
+                "The project could not be opened",
+                "The file may be damaged, or it was made by a newer version of vidzcut.",
+                &format!(
+                    "{}
+{e}",
+                    path.display()
+                ),
+            ),
         }
     }
 
@@ -255,7 +303,11 @@ impl VidzApp {
                 self.saved_at = None;
                 self.editor.say("Project saved");
             }
-            Err(e) => self.editor.say(format!("Could not save: {e}")),
+            Err(e) => self.problem(
+                "The project could not be saved",
+                "Check that the folder still exists, that the disk is not full and that you are allowed to write there. Your work is still open: try Save as to choose another place.",
+                &e.to_string(),
+            ),
         }
     }
 
@@ -600,6 +652,15 @@ impl VidzApp {
         }
     }
 
+    /// Show an error window: what happened in plain words, and details that can be copied.
+    fn problem(&mut self, title: &str, plain: &str, details: &str) {
+        tracing::error!("{title}: {details}");
+        self.dialog = Some(Dialog::Problem {
+            title: title.to_string(),
+            plain: plain.to_string(),
+            details: details.to_string(),
+        });
+    }
     // ---- dialogs ----------------------------------------------------------------------------------------------------
 
     fn show_dialog(&mut self, ctx: &egui::Context) {
@@ -629,10 +690,11 @@ impl VidzApp {
                         });
                     });
                 if let Some(restore) = choice {
+                    let mut failed = None;
                     if restore {
                         match Document::restore(&item) {
                             Ok(doc) => self.set_document(doc),
-                            Err(e) => self.editor.say(format!("Could not restore: {e}")),
+                            Err(e) => failed = Some(e.to_string()),
                         }
                     }
                     let _ = std::fs::remove_file(&item.file);
@@ -641,6 +703,52 @@ impl VidzApp {
                         .map(|d| Document::recovery_items(&d))
                         .unwrap_or_default();
                     self.dialog = (!rest.is_empty()).then_some(Dialog::Recover(rest));
+                    if let Some(details) = failed {
+                        self.problem(
+                            "The project could not be restored",
+                            "The recovery copy is damaged.",
+                            &details,
+                        );
+                    }
+                }
+            }
+            Dialog::Problem {
+                title,
+                plain,
+                details,
+            } => {
+                let (title, plain, details) = (title.clone(), plain.clone(), details.clone());
+                let mut close = false;
+                egui::Window::new(&title)
+                    .collapsible(false)
+                    .resizable(false)
+                    .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+                    .max_width(460.0)
+                    .show(ctx, |ui| {
+                        ui.label(&plain);
+                        ui.add_space(6.0);
+                        egui::CollapsingHeader::new("Details for the helper")
+                            .default_open(false)
+                            .show(ui, |ui| {
+                                ui.label(egui::RichText::new(&details).small().monospace());
+                            });
+                        ui.add_space(8.0);
+                        ui.horizontal(|ui| {
+                            if ui.add(theme::primary_button("OK")).clicked() {
+                                close = true;
+                            }
+                            if ui.button("Copy details").clicked() {
+                                ctx.copy_text(format!("{title}\n{details}"));
+                            }
+                            if ui.button("Open log folder").clicked() {
+                                let dir = editor::log_dir();
+                                let _ = std::fs::create_dir_all(&dir);
+                                crate::export_dialog::open_folder(&dir);
+                            }
+                        });
+                    });
+                if close {
+                    self.dialog = None;
                 }
             }
             Dialog::Quit => {
@@ -821,6 +929,9 @@ impl eframe::App for VidzApp {
                 match home::show(ui, &logo, &recent) {
                     home::Action::None => {}
                     home::Action::CreateProject => self.new_project(),
+                    home::Action::CreateWithAspect(preset) => self.new_project_with(preset),
+                    home::Action::OpenSample => self.open_sample(),
+                    home::Action::OpenSettings => self.editor.settings_ui.open = true,
                     home::Action::OpenDialog => self.open_dialog(),
                     home::Action::Open(path) => self.open_path(&path),
                     home::Action::RemoveRecent(path) => {
@@ -880,4 +991,12 @@ impl eframe::App for VidzApp {
         }
         self.dev.after_frame(&ctx);
     }
+}
+
+fn project_width(doc: &Document) -> u32 {
+    doc.project.canvas.width
+}
+
+fn project_height(doc: &Document) -> u32 {
+    doc.project.canvas.height
 }

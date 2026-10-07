@@ -191,6 +191,12 @@ pub fn show(ui: &mut egui::Ui, ctx: &mut Ctx<'_>) {
                 super::caption_panel::show(ui, ctx);
             } else if ctx.state.category == Category::Transitions {
                 super::transition_panel::show(ui, ctx);
+            } else if ctx.state.category == Category::Templates {
+                if ctx.state.sub_menu == 0 {
+                    super::user_template_panel::show(ui, ctx);
+                } else {
+                    super::template_panel::show(ui, ctx);
+                }
             } else if ctx.state.category == Category::Audio {
                 super::audio_panel::show(ui, ctx);
             } else if ctx.state.category == Category::Stickers {

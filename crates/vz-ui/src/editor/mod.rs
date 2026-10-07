@@ -17,6 +17,7 @@ mod text_panel;
 mod timeline;
 mod topbar;
 mod transition_panel;
+mod user_template_panel;
 mod widgets;
 
 use crate::settings::{LayoutPreset, UiSettings};
@@ -30,6 +31,7 @@ pub use assets::{Category, short_duration};
 pub use audio_panel::audio_dir;
 pub use caption_panel::import_file as import_caption_file;
 pub use timeline::TimelineDrag;
+pub(crate) use topbar::log_dir;
 
 /// Everything the editor screen remembers while it is open (none of it is saved in the project).
 pub struct EditorState {
@@ -94,6 +96,8 @@ pub struct EditorState {
     pub audio_page: inspector::AudioPage,
     pub audio_jobs: crate::audio_jobs::AudioJobs,
     pub audio_panel: audio_panel::PanelState,
+    /// My templates (Templates tab).
+    pub user_templates: user_template_panel::PanelState,
     /// The Settings window.
     pub settings_ui: crate::settings_window::SettingsState,
     pub hsl_band: usize,
@@ -158,6 +162,7 @@ impl Default for EditorState {
             audio_page: inspector::AudioPage::default(),
             audio_jobs: crate::audio_jobs::AudioJobs::default(),
             audio_panel: audio_panel::PanelState::default(),
+            user_templates: user_template_panel::PanelState::default(),
             settings_ui: crate::settings_window::SettingsState::default(),
             hsl_band: 0,
             curve_channel: 0,
