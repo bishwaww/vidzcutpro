@@ -34,6 +34,13 @@ pub fn show(ui: &mut egui::Ui, ctx: &mut Ctx<'_>) {
             {
                 ctx.state.show_scopes = !ctx.state.show_scopes;
             }
+            if ui
+                .button(RichText::new("Save picture").small())
+                .on_hover_text("Save the picture at the playhead as a PNG or JPG file")
+                .clicked()
+            {
+                ctx.actions.push(super::Action::ExportPicture);
+            }
         });
     });
 

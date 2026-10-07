@@ -584,3 +584,99 @@ fn audio_only_export_can_be_cancelled_and_leaves_no_file() {
     assert!(matches!(result, Err(ExportError::Cancelled)));
     assert!(!path.exists());
 }
+
+#[test]
+fn hevc_in_a_mov_with_a_custom_bit_rate_and_a_different_frame_rate() {
+    if !VideoCodec::Hevc.is_available() {
+        eprintln!("no HEVC encoder here, skipping");
+        return;
+    }
+    let doc = doc_with(&[testutil::standard()]);
+    let out = temp_out("hevc.mov");
+    let mut s = ExportSettings::for_project(&doc.project, out.clone(), 360);
+    s.codec = VideoCodec::Hevc;
+    s.container = Container::Mov;
+    s.frame_rate = vz_core::FrameRate::FPS_30;
+    s.custom_kbps = Some(800);
+    assert_eq!(s.video_bit_rate(), 800_000);
+    let report = export(&doc.project, &s, &mut |_| {}, &AtomicBool::new(false)).unwrap();
+    println!("HEVC with {} in {:.1}s", report.encoder, report.seconds);
+    let info = probe_json(&out);
+    let v = stream(&info, "video");
+    assert_eq!(v["codec_name"], "hevc");
+    assert_eq!(v["r_frame_rate"], "30/1");
+    assert!(
+        info["format"]["format_name"]
+            .as_str()
+            .unwrap()
+            .contains("mov")
+    );
+    assert_eq!(stream(&info, "audio")["codec_name"], "aac");
+}
+
+#[test]
+fn hevc_asks_for_less_bit_rate_than_h264() {
+    let p = Project::new("x");
+    let mut s = ExportSettings::for_project(&p, "x.mp4".into(), 1080);
+    let h264 = s.video_bit_rate();
+    s.codec = VideoCodec::Hevc;
+    assert!(s.video_bit_rate() < h264);
+}
+
+#[test]
+fn a_gif_has_the_right_size_picture_count_and_colours() {
+    let doc = doc_with(&[testutil::standard()]);
+    for dither in Dither::ALL {
+        let out = temp_out(&format!("clip-{dither:?}.gif"));
+        let mut s = GifSettings::for_project(&doc.project, out.clone(), 180);
+        s.fps = 10;
+        s.dither = dither;
+        let mut last = None;
+        let report = export_gif(
+            &doc.project,
+            &s,
+            &mut |p| last = Some(p),
+            &AtomicBool::new(false),
+        )
+        .unwrap_or_else(|e| panic!("{dither:?}: {e}"));
+        assert_eq!(report.frames, 40, "4 s at 10 fps");
+        assert_eq!(last.unwrap().frames_done, 40);
+        let info = probe_json(&out);
+        let v = stream(&info, "video");
+        assert_eq!(v["codec_name"], "gif");
+        assert_eq!(
+            (v["width"].as_u64(), v["height"].as_u64()),
+            (Some(320), Some(180))
+        );
+        let seconds = number(&info["format"]["duration"]);
+        assert!((seconds - 4.0).abs() < 0.2, "{dither:?} lasts {seconds} s");
+    }
+}
+
+#[test]
+fn a_gif_can_be_cancelled_and_leaves_nothing_behind() {
+    let doc = doc_with(&[testutil::standard()]);
+    let out = temp_out("cancelled.gif");
+    let s = GifSettings::for_project(&doc.project, out.clone(), 180);
+    let r = export_gif(&doc.project, &s, &mut |_| {}, &AtomicBool::new(true));
+    assert!(matches!(r, Err(ExportError::Cancelled)));
+    assert!(!out.exists());
+}
+
+#[test]
+fn a_picture_of_the_timeline_can_be_saved_as_png_and_jpg() {
+    let doc = doc_with(&[testutil::standard()]);
+    for format in PictureFormat::ALL {
+        let out = temp_out(&format!("frame.{}", format.extension()));
+        save_picture(&doc.project, US_PER_SEC, (320, 180), format, &out).unwrap();
+        let img = image::open(&out).unwrap();
+        assert_eq!((img.width(), img.height()), (320, 180));
+        // the test chart is colourful, not black
+        let rgb = img.to_rgb8();
+        let lit = rgb
+            .pixels()
+            .filter(|p| p.0.iter().any(|&c| c > 100))
+            .count();
+        assert!(lit > 1000, "{format:?}: only {lit} bright pixels");
+    }
+}

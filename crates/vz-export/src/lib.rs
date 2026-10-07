@@ -6,9 +6,15 @@
 
 mod audio;
 mod encode;
+mod gif;
+mod picture;
+mod presets;
 
 pub use audio::{AudioExportSettings, AudioFormat, export_audio};
 pub use encode::{Cancelled, ExportError, ExportReport, Progress, export};
+pub use gif::{Dither, GifSettings, export_gif};
+pub use picture::{PictureFormat, save_picture};
+pub use presets::{PRESETS, Preset};
 
 use std::path::PathBuf;
 use vz_core::{FrameRate, Micros, Project};
@@ -45,6 +51,73 @@ impl Quality {
     }
 }
 
+/// The video format.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum VideoCodec {
+    #[default]
+    H264,
+    /// Smaller files for the same quality; needs a graphics-card encoder or the software one in our FFmpeg.
+    Hevc,
+}
+
+impl VideoCodec {
+    pub const ALL: [Self; 2] = [Self::H264, Self::Hevc];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::H264 => "H.264 (works everywhere)",
+            Self::Hevc => "HEVC / H.265 (smaller files)",
+        }
+    }
+
+    /// Is any encoder for this codec on this computer?
+    pub fn is_available(self) -> bool {
+        let _ = vz_media::init();
+        !encode::encoder_candidates(self).is_empty()
+    }
+
+    /// How much of the H.264 bit rate gives the same look.
+    fn bit_rate_factor(self) -> f64 {
+        match self {
+            Self::H264 => 1.0,
+            Self::Hevc => 0.7,
+        }
+    }
+}
+
+/// The file type.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Container {
+    #[default]
+    Mp4,
+    Mov,
+}
+
+impl Container {
+    pub const ALL: [Self; 2] = [Self::Mp4, Self::Mov];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Mp4 => "MP4",
+            Self::Mov => "MOV",
+        }
+    }
+
+    pub fn extension(self) -> &'static str {
+        match self {
+            Self::Mp4 => "mp4",
+            Self::Mov => "mov",
+        }
+    }
+
+    fn format_name(self) -> &'static str {
+        match self {
+            Self::Mp4 => "mp4",
+            Self::Mov => "mov",
+        }
+    }
+}
+
 /// Everything the exporter needs to know.
 #[derive(Clone, Debug)]
 pub struct ExportSettings {
@@ -53,6 +126,10 @@ pub struct ExportSettings {
     pub height: u32,
     pub frame_rate: FrameRate,
     pub quality: Quality,
+    /// A video bit rate chosen by the user, in kilobits per second. Overrides `quality`.
+    pub custom_kbps: Option<u32>,
+    pub codec: VideoCodec,
+    pub container: Container,
     /// Export only this part of the timeline (start, end). `None` exports everything.
     pub range: Option<(Micros, Micros)>,
 }
@@ -68,14 +145,23 @@ impl ExportSettings {
             height,
             frame_rate: project.frame_rate,
             quality: Quality::Recommended,
+            custom_kbps: None,
+            codec: VideoCodec::H264,
+            container: Container::Mp4,
             range: None,
         }
     }
 
     /// Target video bit rate in bits per second.
     pub fn video_bit_rate(&self) -> i64 {
+        if let Some(k) = self.custom_kbps {
+            return i64::from(k) * 1000;
+        }
         let pixels = f64::from(self.width) * f64::from(self.height);
-        (pixels * self.frame_rate.as_f64() * self.quality.bits_per_pixel()) as i64
+        (pixels
+            * self.frame_rate.as_f64()
+            * self.quality.bits_per_pixel()
+            * self.codec.bit_rate_factor()) as i64
     }
 }
 

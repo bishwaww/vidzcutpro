@@ -194,6 +194,8 @@ pub enum Action {
     OpenDialog,
     TogglePlay,
     Export,
+    /// Open the Export window on the "Picture" page (save the picture at the playhead).
+    ExportPicture,
     /// Ask for a new thumbnail (used after relinking).
     Relink(MediaId),
 }

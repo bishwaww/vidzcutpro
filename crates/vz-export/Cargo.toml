@@ -12,6 +12,9 @@ vz-render = { path = "../vz-render" }
 vz-audio = { path = "../vz-audio" }
 ffmpeg-next = { version = "9", default-features = false, features = ["codec", "format", "software-resampling", "software-scaling"] }
 thiserror.workspace = true
+image.workspace = true
+gif = { version = "0.14", default-features = false, features = ["std"] }
+color_quant = "1.1"
 tracing.workspace = true
 
 [dev-dependencies]

@@ -3,7 +3,7 @@
 
 use crate::dev::DevHooks;
 use crate::editor::{self, Action, EditorState};
-use crate::export_dialog::ExportDialog;
+use crate::export_dialog::{ExportContext, ExportDialog};
 use crate::home::{self, RecentItem};
 use crate::preview::Preview;
 use crate::settings::UiSettings;
@@ -323,8 +323,11 @@ impl VidzApp {
                                 if let Some(dir) = self.dev.auto_export.clone()
                                     && self.dev.imported == self.dev.import.len()
                                 {
-                                    let mut dialog =
-                                        ExportDialog::new(&self.doc.project.name, &self.settings);
+                                    let mut dialog = ExportDialog::new(
+                                        &self.doc.project.name,
+                                        &self.settings,
+                                        ExportContext::default(),
+                                    );
                                     dialog.start_now_into(
                                         dir,
                                         &self.doc.project,
@@ -411,6 +414,38 @@ impl VidzApp {
         }
     }
 
+    /// What the Export window needs to know about the editor.
+    fn export_context(&self) -> ExportContext {
+        let timeline = self.doc.project.timeline();
+        let selected: Vec<_> = self
+            .editor
+            .selection
+            .iter()
+            .filter_map(|id| timeline.clip(*id))
+            .collect();
+        let selection = (!selected.is_empty()).then(|| {
+            (
+                selected.iter().map(|c| c.start).min().unwrap_or(0),
+                selected.iter().map(|c| c.end()).max().unwrap_or(0),
+            )
+        });
+        let captions = self
+            .doc
+            .caption_track()
+            .map(|t| {
+                self.doc
+                    .caption_lines(t)
+                    .into_iter()
+                    .map(|(_, l)| l)
+                    .collect()
+            })
+            .unwrap_or_default();
+        ExportContext {
+            playhead: self.editor.playhead,
+            selection,
+            captions,
+        }
+    }
     fn toggle_play(&mut self) {
         if self.editor.playing {
             self.pause();
@@ -522,7 +557,24 @@ impl VidzApp {
                     self.editor.say("Add something to the timeline first.");
                 } else {
                     self.pause();
-                    self.export = Some(ExportDialog::new(&self.doc.project.name, &self.settings));
+                    let context = self.export_context();
+                    self.export = Some(ExportDialog::new(
+                        &self.doc.project.name,
+                        &self.settings,
+                        context,
+                    ));
+                }
+            }
+            Action::ExportPicture => {
+                if self.doc.project.duration() == 0 {
+                    self.editor.say("Add something to the timeline first.");
+                } else {
+                    self.pause();
+                    let context = self.export_context();
+                    let mut dialog =
+                        ExportDialog::new(&self.doc.project.name, &self.settings, context);
+                    dialog.show_picture_page();
+                    self.export = Some(dialog);
                 }
             }
             Action::Relink(id) => self.relink(id),

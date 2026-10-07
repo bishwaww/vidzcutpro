@@ -1,6 +1,6 @@
 //! The export pipeline: render frames, mix sound, encode, write an MP4.
 
-use crate::ExportSettings;
+use crate::{ExportSettings, VideoCodec};
 use ff::format::Pixel;
 use ff::format::sample::{Sample, Type as SampleType};
 use ff::software::scaling::{Context as Scaler, Flags};
@@ -53,11 +53,12 @@ pub struct ExportReport {
 }
 
 /// Encoders to try, best first.
-fn encoder_candidates() -> Vec<&'static str> {
-    let all: &[&str] = if cfg!(target_os = "macos") {
-        &["h264_videotoolbox", "libopenh264"]
-    } else {
-        &["h264_nvenc", "h264_qsv", "h264_amf", "libopenh264"]
+pub(crate) fn encoder_candidates(codec: VideoCodec) -> Vec<&'static str> {
+    let all: &[&str] = match (codec, cfg!(target_os = "macos")) {
+        (VideoCodec::H264, true) => &["h264_videotoolbox", "libopenh264"],
+        (VideoCodec::H264, false) => &["h264_nvenc", "h264_qsv", "h264_amf", "libopenh264"],
+        (VideoCodec::Hevc, true) => &["hevc_videotoolbox", "libkvazaar"],
+        (VideoCodec::Hevc, false) => &["hevc_nvenc", "hevc_qsv", "hevc_amf", "libkvazaar"],
     };
     all.iter()
         .copied()
@@ -85,7 +86,7 @@ pub fn export(
     let frames_total = (rate.frame_at(end - 1) - first_frame + 1).max(1) as u64;
 
     let partial = partial_path(&settings.path);
-    let candidates = encoder_candidates();
+    let candidates = encoder_candidates(settings.codec);
     if candidates.is_empty() {
         return Err(ExportError::NoEncoder("none are installed".into()));
     }
@@ -179,7 +180,7 @@ impl Job<'_> {
         let acodec = encoder::find(codec::Id::AAC)
             .ok_or_else(|| ExportError::Message("no AAC encoder".into()))?;
 
-        let mut octx = format::output_as(&self.partial, "mp4")?;
+        let mut octx = format::output_as(&self.partial, s_container(self.settings))?;
         let global_header = octx.format().flags().contains(format::Flags::GLOBAL_HEADER);
 
         // ---- video encoder ----
@@ -202,14 +203,21 @@ impl Job<'_> {
         if global_header {
             venc.set_flags(codec::Flags::GLOBAL_HEADER);
         }
+        if s.codec == VideoCodec::Hevc {
+            // "hvc1" is the name Apple players and most phones expect for HEVC in MP4 / MOV
+            // SAFETY: the pointer is the encoder context we own and have not opened yet.
+            unsafe {
+                (*venc.as_mut_ptr()).codec_tag = u32::from_le_bytes(*b"hvc1");
+            }
+        }
         let mut options = Dictionary::new();
         match encoder_name {
-            "h264_nvenc" => {
+            "h264_nvenc" | "hevc_nvenc" => {
                 options.set("preset", "p4");
                 options.set("tune", "hq");
             }
-            "h264_qsv" => options.set("preset", "medium"),
-            "h264_amf" => options.set("quality", "balanced"),
+            "h264_qsv" | "hevc_qsv" => options.set("preset", "medium"),
+            "h264_amf" | "hevc_amf" => options.set("quality", "balanced"),
             _ => {}
         }
         let mut venc = venc.open_as_with(vcodec, options)?;
@@ -461,4 +469,8 @@ fn drain_audio(
         packet.write_interleaved(octx)?;
     }
     Ok(())
+}
+
+fn s_container(settings: &ExportSettings) -> &'static str {
+    settings.container.format_name()
 }

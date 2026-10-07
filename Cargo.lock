@@ -4021,7 +4021,10 @@ dependencies = [
 name = "vz-export"
 version = "0.0.1"
 dependencies = [
+ "color_quant",
  "ffmpeg-next",
+ "gif",
+ "image",
  "serde_json",
  "thiserror 2.0.21",
  "tracing",
