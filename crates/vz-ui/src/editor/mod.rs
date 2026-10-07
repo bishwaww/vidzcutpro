@@ -205,6 +205,8 @@ pub enum Action {
     Export,
     /// Open the Export window on the "Picture" page (save the picture at the playhead).
     ExportPicture,
+    /// Make a proxy (small copy for the preview) of a video.
+    MakeProxy(MediaId),
     /// Ask for a new thumbnail (used after relinking).
     Relink(MediaId),
 }
@@ -227,6 +229,8 @@ pub struct Ctx<'a> {
     pub player_texture: Option<&'a egui::TextureHandle>,
     pub actions: Vec<Action>,
     pub saved_at: Option<String>,
+    /// One line about proxies for the Details panel.
+    pub proxy_status: Option<String>,
 }
 
 impl Ctx<'_> {

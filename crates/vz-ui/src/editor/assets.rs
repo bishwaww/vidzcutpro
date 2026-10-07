@@ -498,6 +498,15 @@ fn tile(ui: &mut egui::Ui, ctx: &mut Ctx<'_>, asset: &MediaAsset, used: bool) {
             add_to_timeline(ctx, asset.id);
             ui.close();
         }
+        if asset.kind == MediaKind::Video
+            && !missing
+            && ui
+                .button("Make a proxy (smaller copy for editing)")
+                .clicked()
+        {
+            ctx.actions.push(Action::MakeProxy(asset.id));
+            ui.close();
+        }
         if missing && ui.button("Relink…").clicked() {
             ctx.actions.push(Action::Relink(asset.id));
             ui.close();

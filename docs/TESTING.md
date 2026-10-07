@@ -258,3 +258,16 @@ You need: a video with talking or music on the timeline (the Audio tab works on 
 13. Make a problem on purpose: save a project into a folder and delete that folder, then press Save. A window explains it in plain words with **Copy details** and **Open log folder**.
 
 **Please tell me:** anything that looks wrong in an exported file, GIF quality, slow HEVC, shortcuts that do not work, and anything confusing in the new windows.
+
+## Phase 7d — your checklist (speed)
+
+You need a big video (4K or bigger) for most of these. A phone's 4K clip is perfect.
+
+1. Import the 4K video and put it on the timeline. In the **Details** panel (nothing selected) the **Proxy** line says **"Making a proxy of …: 40 %"**. Keep editing: it works in the background. When it says **"1 proxy file(s) ready"** playing and scrubbing should feel smoother.
+2. Untick **Use proxies** (Details or Settings → Performance): the preview now uses the original (slower on 4K). Tick it again.
+3. **Export** the project: the file must look as sharp as the original (the export never uses proxies). Compare a frame with the original video.
+4. Right-click a small (1080p) video in **Media** → **Make a proxy…**: it works too. **Settings → Storage** shows the proxy folder size; **Delete all proxies** empties it (they are made again when needed).
+5. **Settings → Performance → Graphics card decodes video**: leave on *Only big pictures*, then try *Always* and *Never* with a 4K video and play it. Tell me which feels smoothest, and **tell me if the picture ever shows blocks, wrong colours or freezes** (then I should look at your video's format).
+6. Scrub back and forth over the same few seconds, or loop-play a short part: the second time it should be instant (picture cache). **Settings → Performance → Memory for pictures** changes how much is kept.
+
+**Please tell me:** whether 4K playback feels better, how long a proxy takes for a minute of video, and anything that looks different between the preview and the export.

@@ -23,7 +23,15 @@
 - `D:\Projects\vidzcut` — the old Python/Qt prototype v1.4.0 (**reference only**, don't copy architecture). Notes: `docs/PROTOTYPE_NOTES.md`. Real test video: `D:/Gloma/with track.mp4` (read-only).
 - Docs: `docs/SPEC.md`, `docs/ARCHITECTURE.md`, `docs/PROTOTYPE_NOTES.md`, `docs/BUILDING.md`, `ROADMAP.md`.
 
-## Current state (2026-10-08) — Phase 6 and Phase 7a-7c built (gate passed), waiting for the owner's hand test; Phase 5 hand test was never reported back
+## Current state (2026-10-08) — Phase 6 and Phase 7a-7d built (gate passed), waiting for the owner's hand test; Phase 5 hand test was never reported back
+### Phase 7d additions (read this first)
+- **Picture cache**: `vz-ui/src/preview.rs` `FrameCache` (rendered preview pictures by (time, size), oldest dropped first, cleared on every project / proxy change, size from `Preferences.cache_mb`).
+- **Proxies**: `vz-export/src/proxy.rs` (`make_proxy` re-encodes with `FrameSource` pictures → H.264, 960 px long side, GOP = fps/2, hardware encoder first; `proxy_path` = name + hash of (path, size, length) so a changed file gets a new proxy); `vz-ui/src/proxies.rs` (`Proxies`: scans video assets each frame (cheap: only new / relinked ones are looked at), queues videos bigger than 1920 px when `auto_proxy`, one thread at a time, `map()` original → proxy, `status()` for the Details line, `generation` for change detection); `Renderer::set_proxies` (vz-render; reader opens the proxy instead of the original when it exists, falls back to the original if it will not open; **only the preview thread sets it, export never does**). `VidzApp::sync_proxies` runs every editor frame and also sets the graphics-card mode and cache size. Files: `<data dir>/proxies/`.
+- **Graphics-card decoding**: `vz-media/src/hw.rs` (`Mode` Automatic / Always / Never, `wanted_for(mode, w, h)` = Automatic means more than 2.6 million pixels; `create_device`, `attach` (sets hw_device_ctx + get_format via ffi), `download`), `VideoDecoder::open` probes the first picture and flushes (`seek(0)`) before trusting the card; `decode_next` returns `MediaError::HardwareDecode` on any card error and `VideoDecoder::frame_at` then reopens the file with the processor and carries on. Windows = D3D11VA, macOS = VideoToolbox (macOS untested), Linux = none.
+- Lesson: a made-up 4K HEVC clip from libkvazaar makes this PC's D3D11 decoder fail on every picture (the fallback handles it); clips from `hevc_qsv` decode fine. Speed test: `VIDZCUT_SPEED_VIDEO=file cargo test --release -p vz-media how_fast -- --ignored --nocapture`.
+- Tests added: vz-export proxy 3, vz-media hardware 2 + 1 ignored speed + 1 ignored HEVC, vz-ui FrameCache 2.
+- Not done: a "Proxy" badge on media tiles, proxy for images, graphics-card decoding in the export is on too (same `open`), hardware decode of 10-bit HDR colours was not looked at.
+
 ### Phase 7 (7a-7c) additions (read this first)
 - Export (`vz-export`): `ExportSettings` now has `codec` (`VideoCodec` H264 / Hevc), `container` (Mp4 / Mov), `custom_kbps`, `use_hardware`; `encoder_candidates(codec, hardware)` (H.264: NVENC, QSV, AMF, OpenH264; HEVC: NVENC, QSV, AMF, libkvazaar software), HEVC is tagged `hvc1`. New files: `gif.rs` (`export_gif`, NeuQuant palette shared by all pictures + none / ordered / Floyd-Steinberg dithering, `gif` + `color_quant` crates), `picture.rs` (`save_picture` PNG / JPG, `image` jpeg feature), `presets.rs` (7 social presets, `Preset::fits_canvas`), `audio.rs` (Phase 6).
 - Export window: `vz-ui/src/export_dialog.rs` (`ExportContext` = playhead, selected clips' span, caption lines; modes Video / Sound only / GIF / Picture / Captions; picture and captions finish at once, the rest run in a thread; "Keep editing" = `tucked_away`). `Action::ExportPicture` from the player's "Save picture" button.
@@ -113,4 +121,4 @@
 - The Templates tab (Phase 7) is a placeholder ("Coming in Phase 7"); the Library / Subprojects sub-menus too. Variable fonts are used at their default weight in the interface (video text selects bold properly).
 
 ## Next step
-Owner runs the **Phase 6** and **Phase 7** checklists in `docs/TESTING.md` and says OK or reports problems → then **7d** (proxies, hardware decode, render cache) and **7e** (installers, ask the owner about code signing first). Phase 8 after that.
+Owner runs the **Phase 6** and **Phase 7** checklists in `docs/TESTING.md` and says OK or reports problems → then **7e** (installers, ask the owner about code signing first). Phase 8 after that.

@@ -44,6 +44,8 @@ pub struct SettingsState {
     /// The command whose new shortcut is being waited for.
     pub waiting_for_key: Option<Cmd>,
     message: Option<String>,
+    /// Set by the Storage page; the app deletes the proxy files and clears this.
+    pub delete_proxies: bool,
 }
 
 impl SettingsState {
@@ -90,7 +92,7 @@ pub fn show(ctx: &egui::Context, state: &mut SettingsState, settings: &mut UiSet
                 Page::General => changed |= general(ui, settings),
                 Page::Appearance => changed |= appearance(ui, settings),
                 Page::Performance => changed |= performance(ui, settings),
-                Page::Storage => storage(ui),
+                Page::Storage => storage(ui, state),
                 Page::Shortcuts => changed |= shortcuts(ui, ctx, state, settings),
             }
         });
@@ -178,6 +180,74 @@ fn performance(ui: &mut egui::Ui, settings: &mut UiSettings) -> bool {
         .color(theme::MUTED)
         .small(),
     );
+    ui.add_space(10.0);
+    changed |= ui
+        .checkbox(
+            &mut settings.prefs.use_proxies,
+            "Edit with proxies (smaller copies of big videos)",
+        )
+        .changed();
+    changed |= ui
+        .checkbox(
+            &mut settings.prefs.auto_proxy,
+            "Make proxies by myself for videos bigger than full HD",
+        )
+        .changed();
+    ui.label(
+        RichText::new(
+            "Proxies make big 4K videos play smoothly while you edit. The export always uses your original files. You can also right-click any video in Media and choose \"Make a proxy\".",
+        )
+        .color(theme::MUTED)
+        .small(),
+    );
+    ui.add_space(10.0);
+    ui.horizontal(|ui| {
+        ui.label("Memory for pictures the preview has already drawn");
+        changed |= ui
+            .add(
+                egui::DragValue::new(&mut settings.prefs.cache_mb)
+                    .range(50..=4000)
+                    .speed(10.0)
+                    .suffix(" MB"),
+            )
+            .changed();
+    });
+    ui.label(
+        RichText::new("Going back over the same part of the timeline is then instant. More memory keeps more pictures.")
+            .color(theme::MUTED)
+            .small(),
+    );
+    ui.add_space(10.0);
+    ui.horizontal(|ui| {
+        ui.label("Graphics card decodes video");
+        let shown = match settings.prefs.hardware_decode.as_str() {
+            "always" => "Always",
+            "never" => "Never",
+            _ => "Only big pictures (automatic)",
+        };
+        egui::ComboBox::from_id_salt("hardware_decode")
+            .selected_text(shown)
+            .show_ui(ui, |ui| {
+                for (id, label) in [
+                    ("automatic", "Only big pictures (automatic)"),
+                    ("always", "Always"),
+                    ("never", "Never"),
+                ] {
+                    if ui
+                        .selectable_label(settings.prefs.hardware_decode == id, label)
+                        .clicked()
+                    {
+                        settings.prefs.hardware_decode = id.to_string();
+                        changed = true;
+                    }
+                }
+            });
+    });
+    ui.label(
+        RichText::new("For 4K and HEVC videos the graphics card can be more than twice as fast. For ordinary full HD videos the processor is quicker, so automatic leaves those to it. Applies to files opened from now on.")
+            .color(theme::MUTED)
+            .small(),
+    );
     changed
 }
 
@@ -205,9 +275,9 @@ fn megabytes(bytes: u64) -> String {
     format!("{:.1} MB", bytes as f64 / 1e6)
 }
 
-fn storage(ui: &mut egui::Ui) {
+fn storage(ui: &mut egui::Ui, state: &mut SettingsState) {
     let base = crate::editor::audio_dir();
-    let rows: [(&str, PathBuf, &str); 3] = [
+    let rows: [(&str, PathBuf, &str); 4] = [
         (
             "Voice-overs",
             base.join("recordings"),
@@ -222,6 +292,11 @@ fn storage(ui: &mut egui::Ui) {
             "Sound-effect cache",
             base.join("effects"),
             "Our built-in sound effects, made when first used. Safe to clear.",
+        ),
+        (
+            "Proxies",
+            crate::proxies::proxy_dir(),
+            "Small copies of big videos, made for smooth editing. Safe to delete: they are made again when needed.",
         ),
     ];
     egui::Grid::new("settings_storage")
@@ -249,6 +324,9 @@ fn storage(ui: &mut egui::Ui) {
     ui.add_space(8.0);
     if ui.button("Clear the sound-effect cache").clicked() {
         let _ = std::fs::remove_dir_all(base.join("effects"));
+    }
+    if ui.button("Delete all proxies").clicked() {
+        state.delete_proxies = true;
     }
 }
 

@@ -55,6 +55,14 @@ pub struct Preferences {
     pub ui_scale: f32,
     /// Let the graphics card make the video when it can.
     pub hardware_encoder: bool,
+    /// Make proxies of videos bigger than full HD by itself.
+    pub auto_proxy: bool,
+    /// Preview with proxies when there are some.
+    pub use_proxies: bool,
+    /// How much memory the preview picture cache may use, in megabytes.
+    pub cache_mb: u32,
+    /// When the graphics card decodes video: `automatic` (big pictures only), `always` or `never`.
+    pub hardware_decode: String,
 }
 
 impl Default for Preferences {
@@ -63,6 +71,10 @@ impl Default for Preferences {
             autosave_secs: 30,
             ui_scale: 1.0,
             hardware_encoder: true,
+            auto_proxy: true,
+            use_proxies: true,
+            cache_mb: 400,
+            hardware_decode: "automatic".to_string(),
         }
     }
 }

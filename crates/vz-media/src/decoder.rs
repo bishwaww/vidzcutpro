@@ -118,10 +118,46 @@ pub struct VideoDecoder {
     cache: Option<Arc<VideoFrame>>,
     /// A run of converted pictures in time order, filled when playing backwards.
     back: Vec<(Micros, Arc<VideoFrame>)>,
+    /// The file, to open again with the processor if the graphics card fails.
+    path: std::path::PathBuf,
+    /// The graphics card was given to the decoder.
+    hardware: bool,
 }
 
 impl VideoDecoder {
+    /// Open a video. The graphics card decodes it when it can (and Settings allow); if that does not work for this
+    /// file, the processor does.
     pub fn open(path: &Path, max: MaxSize) -> Result<Self> {
+        let mode = crate::hw::mode();
+        if mode != crate::hw::Mode::Never
+            && let Ok(mut d) = Self::open_with(path, max, Some(mode))
+        {
+            if !d.hardware {
+                return Ok(d);
+            }
+            // make sure the card really can decode this file before relying on it
+            match d.decode_next() {
+                Ok(Some(_)) if d.seek(0).is_ok() => return Ok(d),
+                other => tracing::info!(
+                    "graphics-card decoding does not work for {} ({}), using the processor",
+                    path.display(),
+                    match other {
+                        Err(e) => e.to_string(),
+                        _ => "no picture".to_string(),
+                    }
+                ),
+            }
+        }
+        Self::open_with(path, max, None)
+    }
+
+    /// Is the graphics card decoding this file?
+    pub fn is_hardware(&self) -> bool {
+        self.hardware
+    }
+
+    /// `hardware`: `Some(mode)` lets the graphics card decode when that mode wants it for this picture size.
+    fn open_with(path: &Path, max: MaxSize, hardware: Option<crate::hw::Mode>) -> Result<Self> {
         crate::init()?;
         let input = ff::format::input(&path).map_err(|e| MediaError::Open {
             path: path.to_path_buf(),
@@ -139,7 +175,21 @@ impl VideoDecoder {
         } else {
             to_micros(stream.start_time(), tb.numerator(), tb.denominator())
         };
-        let context = ff::codec::context::Context::from_parameters(stream.parameters())?;
+        let mut context = ff::codec::context::Context::from_parameters(stream.parameters())?;
+        // SAFETY: reading the size from the stream's own parameters
+        let (pw, ph) = unsafe {
+            let p = stream.parameters().as_ptr();
+            ((*p).width.max(0) as u32, (*p).height.max(0) as u32)
+        };
+        let device = if hardware.is_some_and(|m| crate::hw::wanted_for(m, pw, ph)) {
+            crate::hw::create_device()
+        } else {
+            None
+        };
+        if let Some(device) = device {
+            // SAFETY: the context is ours and not opened yet; the device reference is fresh.
+            unsafe { crate::hw::attach(context.as_mut_ptr(), device) };
+        }
         let decoder = context.decoder().video()?;
         let sar = decoder.aspect_ratio();
         let sar = if sar.numerator() > 0 && sar.denominator() > 0 {
@@ -162,6 +212,8 @@ impl VideoDecoder {
             reached_end: false,
             cache: None,
             back: Vec::new(),
+            path: path.to_path_buf(),
+            hardware: device.is_some(),
         })
     }
 
@@ -185,12 +237,32 @@ impl VideoDecoder {
     fn decode_next(&mut self) -> Result<Option<Held>> {
         let mut frame = ff::frame::Video::empty();
         loop {
-            if self.decoder.receive_frame(&mut frame).is_ok() {
-                let pts = frame.timestamp().or(frame.pts()).unwrap_or(0);
-                return Ok(Some(Held {
-                    pts: self.to_media_time(pts),
-                    frame,
-                }));
+            match self.decoder.receive_frame(&mut frame) {
+                Ok(()) => {
+                    if crate::hw::is_on_card(&frame) {
+                        frame =
+                            crate::hw::download(&frame).map_err(|_| MediaError::HardwareDecode)?;
+                    }
+                    let pts = frame.timestamp().or(frame.pts()).unwrap_or(0);
+                    return Ok(Some(Held {
+                        pts: self.to_media_time(pts),
+                        frame,
+                    }));
+                }
+                // "send more data" and "no more pictures" are normal; anything else from the graphics card is a failure
+                Err(e)
+                    if self.hardware
+                        && !matches!(
+                            e,
+                            ff::Error::Eof
+                                | ff::Error::Other {
+                                    errno: ff::util::error::EAGAIN
+                                }
+                        ) =>
+                {
+                    return Err(MediaError::HardwareDecode);
+                }
+                Err(_) => {}
             }
             if self.reached_end {
                 return Ok(None);
@@ -198,8 +270,11 @@ impl VideoDecoder {
             let mut sent = false;
             for (stream, packet) in self.input.packets() {
                 if stream.index() == self.stream_index {
-                    // a damaged packet should not stop the whole clip
                     if let Err(e) = self.decoder.send_packet(&packet) {
+                        if self.hardware {
+                            return Err(MediaError::HardwareDecode);
+                        }
+                        // a damaged packet should not stop the whole clip
                         tracing::debug!("skipping bad packet: {e}");
                         continue;
                     }
@@ -255,7 +330,22 @@ impl VideoDecoder {
 
     /// The picture showing at media time `t`: the last frame that started at or before `t`.
     /// Returns `None` only when the file has no pictures at all.
+    /// If the graphics card fails on this file, the video is opened again with the processor and nothing is lost.
     pub fn frame_at(&mut self, t: Micros) -> Result<Option<Arc<VideoFrame>>> {
+        match self.frame_at_with_current_decoder(t) {
+            Err(MediaError::HardwareDecode) => {
+                tracing::warn!(
+                    "the graphics card failed on {}; using the processor from now on",
+                    self.path.display()
+                );
+                *self = Self::open_with(&self.path.clone(), self.max, None)?;
+                self.frame_at_with_current_decoder(t)
+            }
+            other => other,
+        }
+    }
+
+    fn frame_at_with_current_decoder(&mut self, t: Micros) -> Result<Option<Arc<VideoFrame>>> {
         let t = t.max(0);
         if let Some(f) = self.cached_back(t) {
             return Ok(Some(f));
@@ -531,5 +621,115 @@ mod tests {
                 .iter()
                 .all(|p| *p == [0, 0, 0, 255])
         );
+    }
+}
+
+#[cfg(test)]
+mod hardware_tests {
+    use super::*;
+    use crate::testutil::{self, Spec};
+    use std::time::Instant;
+
+    /// Average difference (0-255) between two pictures.
+    fn difference(a: &VideoFrame, b: &VideoFrame) -> f64 {
+        assert_eq!((a.width, a.height), (b.width, b.height));
+        let total: u64 = a
+            .rgba
+            .iter()
+            .zip(&b.rgba)
+            .map(|(x, y)| u64::from(x.abs_diff(*y)))
+            .sum();
+        total as f64 / a.rgba.len() as f64
+    }
+
+    #[test]
+    fn graphics_card_decoding_gives_the_same_pictures_or_quietly_falls_back() {
+        let path = testutil::video(
+            "hw_1920x1080_25fps_3s.mp4",
+            Spec {
+                width: 1920,
+                height: 1080,
+                seconds: 3,
+                ..Spec::default()
+            },
+        );
+        let max = MaxSize::new(960, 540);
+        let mut software = VideoDecoder::open_with(&path, max, None).unwrap();
+        let mut card = VideoDecoder::open_with(&path, max, Some(crate::hw::Mode::Always)).unwrap();
+        println!("graphics card in use: {}", card.is_hardware());
+        for t in [0, 400_000, 1_000_000, 2_480_000, 800_000, 0] {
+            let a = software.frame_at(t).unwrap().unwrap();
+            let b = card.frame_at(t).unwrap().unwrap();
+            let d = difference(&a, &b);
+            assert!(d < 2.5, "at {t} µs the pictures differ by {d}");
+            assert_eq!(a.pts, b.pts, "same picture time at {t}");
+        }
+    }
+
+    /// Run with `--ignored --nocapture` to see the speed on this computer.
+    #[test]
+    #[ignore = "a speed measurement"]
+    fn how_fast_is_each_way_of_decoding() {
+        // VIDZCUT_SPEED_VIDEO=file.mp4 measures a real video; otherwise a made-up 4K one
+        let path = match std::env::var_os("VIDZCUT_SPEED_VIDEO") {
+            Some(p) => std::path::PathBuf::from(p),
+            None => testutil::video(
+                "hw_3840x2160_25fps_4s.mp4",
+                Spec {
+                    width: 3840,
+                    height: 2160,
+                    seconds: 4,
+                    ..Spec::default()
+                },
+            ),
+        };
+        for hardware in [false, true] {
+            let mut d = VideoDecoder::open_with(
+                &path,
+                MaxSize::new(960, 540),
+                hardware.then_some(crate::hw::Mode::Always),
+            )
+            .unwrap();
+            let started = Instant::now();
+            let mut n = 0;
+            while let Some(f) = d.frame_at(n * 40_000).unwrap() {
+                n += 1;
+                if n >= 100 || f.pts >= 3_900_000 {
+                    break;
+                }
+            }
+            println!(
+                "{}: {n} pictures in {:.2} s ({:.0} pictures/s)",
+                if hardware {
+                    "graphics card"
+                } else {
+                    "processor"
+                },
+                started.elapsed().as_secs_f64(),
+                f64::from(n as u32) / started.elapsed().as_secs_f64()
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod hevc_hardware_tests {
+    use super::*;
+
+    /// Run with VIDZCUT_SPEED_VIDEO=a 4K HEVC file and `--ignored --nocapture`.
+    #[test]
+    #[ignore = "needs a 4K HEVC file"]
+    fn opening_seeking_and_playing_a_big_hevc_file_through_the_normal_open() {
+        let Some(path) = std::env::var_os("VIDZCUT_SPEED_VIDEO") else {
+            return;
+        };
+        let path = std::path::PathBuf::from(path);
+        crate::hw::set_mode(crate::hw::Mode::Always);
+        let mut d = VideoDecoder::open(&path, MaxSize::new(960, 540)).unwrap();
+        println!("card in use: {}", d.is_hardware());
+        for t in [0, 40_000, 80_000, 1_000_000, 2_000_000, 500_000, 3_000_000] {
+            let f = d.frame_at(t).unwrap().unwrap();
+            println!("t={t} got pts {}", f.pts);
+        }
     }
 }

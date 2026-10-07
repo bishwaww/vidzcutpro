@@ -104,6 +104,7 @@ fn with_state<R>(
             player_texture: None,
             actions: Vec::new(),
             saved_at: None,
+            proxy_status: None,
         };
         f(&mut ctx)
     };

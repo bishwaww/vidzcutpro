@@ -4,6 +4,7 @@
 
 pub mod decoder;
 pub mod error;
+pub mod hw;
 pub mod probe;
 pub mod testutil;
 pub mod worker;

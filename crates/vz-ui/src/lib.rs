@@ -8,6 +8,7 @@ mod export_dialog;
 mod home;
 mod keymap;
 mod preview;
+mod proxies;
 mod settings;
 mod settings_window;
 mod theme;

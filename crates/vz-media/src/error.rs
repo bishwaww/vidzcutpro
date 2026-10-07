@@ -6,6 +6,8 @@ pub enum MediaError {
     Open { path: PathBuf, message: String },
     #[error("{0} has no video or audio that vidzcut can read")]
     NothingToRead(String),
+    #[error("the graphics card could not decode this video")]
+    HardwareDecode,
     #[error("could not decode: {0}")]
     Decode(String),
     #[error("FFmpeg error: {0}")]

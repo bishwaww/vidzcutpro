@@ -370,7 +370,7 @@ impl Job<'_> {
 }
 
 /// Use the encoder's own preference: YUV420P if it takes it, else NV12 (what Intel's encoder wants).
-fn pick_pixel_format(codec: ff::Codec) -> Pixel {
+pub(crate) fn pick_pixel_format(codec: ff::Codec) -> Pixel {
     let formats: Vec<Pixel> = codec
         .video()
         .ok()
@@ -385,7 +385,7 @@ fn pick_pixel_format(codec: ff::Codec) -> Pixel {
 }
 
 /// Make the RGB→YUV conversion use the HD colour matrix (BT.709) and limited range, matching how we tag the file.
-fn set_bt709(scaler: &mut Scaler) {
+pub(crate) fn set_bt709(scaler: &mut Scaler) {
     // SAFETY: the pointer is the scaler's own live SwsContext and the table pointers come from FFmpeg.
     unsafe {
         let coefficients = ff::ffi::sws_getCoefficients(ff::ffi::SWS_CS_ITU709);
@@ -403,7 +403,7 @@ fn set_bt709(scaler: &mut Scaler) {
 }
 
 /// Copy a packed RGBA picture into an FFmpeg frame (whose rows may be padded).
-fn fill_rgba(frame: &mut frame::Video, rgba: &[u8], w: u32, h: u32) {
+pub(crate) fn fill_rgba(frame: &mut frame::Video, rgba: &[u8], w: u32, h: u32) {
     let stride = frame.stride(0);
     let row = (w * 4) as usize;
     let data = frame.data_mut(0);
@@ -439,7 +439,7 @@ fn write_audio_chunk(
     Ok(())
 }
 
-fn drain_video(
+pub(crate) fn drain_video(
     enc: &mut encoder::Video,
     packet: &mut Packet,
     octx: &mut format::context::Output,

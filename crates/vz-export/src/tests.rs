@@ -680,3 +680,72 @@ fn a_picture_of_the_timeline_can_be_saved_as_png_and_jpg() {
         assert!(lit > 1000, "{format:?}: only {lit} bright pixels");
     }
 }
+
+#[test]
+fn a_proxy_is_a_small_quick_copy_that_looks_like_the_original() {
+    let big = testutil::video(
+        "big_1920x1080_25fps_3s.mp4",
+        Spec {
+            width: 1920,
+            height: 1080,
+            seconds: 3,
+            ..Spec::default()
+        },
+    );
+    let doc = doc_with(std::slice::from_ref(&big));
+    let asset = &doc.project.media[0];
+    let dest = temp_out("proxy.mp4");
+    let mut last = None;
+    make_proxy(
+        &big,
+        &dest,
+        asset.duration,
+        asset.frame_rate.unwrap_or(vz_core::FrameRate::FPS_25),
+        &mut |p| last = Some(p),
+        &AtomicBool::new(false),
+    )
+    .expect("proxy");
+    let last = last.unwrap();
+    assert_eq!(last.frames_done, last.frames_total);
+
+    let info = probe_json(&dest);
+    let v = stream(&info, "video");
+    assert_eq!(
+        (v["width"].as_u64(), v["height"].as_u64()),
+        (Some(960), Some(540))
+    );
+    let seconds = number(&info["format"]["duration"]);
+    assert!((seconds - 3.0).abs() < 0.15, "proxy lasts {seconds} s");
+
+    // the preview with the proxy looks like the preview with the original
+    let at = 1_500_000;
+    let original = Renderer::new().render(&doc.project, at, (480, 270));
+    let mut with_proxy = Renderer::new();
+    with_proxy.set_proxies([(big.clone(), dest.clone())].into_iter().collect());
+    let via = with_proxy.render(&doc.project, at, (480, 270));
+    let total: u64 = original
+        .rgba
+        .iter()
+        .zip(&via.rgba)
+        .map(|(a, b)| u64::from(a.abs_diff(*b)))
+        .sum();
+    let average = total as f64 / original.rgba.len() as f64;
+    assert!(average < 6.0, "average difference {average} of 255");
+}
+
+#[test]
+fn a_cancelled_proxy_leaves_nothing_behind() {
+    let clip = testutil::standard();
+    let dest = temp_out("cancelled-proxy.mp4");
+    let r = make_proxy(
+        &clip,
+        &dest,
+        4_000_000,
+        vz_core::FrameRate::FPS_25,
+        &mut |_| {},
+        &AtomicBool::new(true),
+    );
+    assert!(matches!(r, Err(ExportError::Cancelled)));
+    assert!(!dest.exists());
+    assert!(!dest.with_extension("mp4.partial").exists());
+}

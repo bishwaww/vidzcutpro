@@ -9,12 +9,14 @@ mod encode;
 mod gif;
 mod picture;
 mod presets;
+mod proxy;
 
 pub use audio::{AudioExportSettings, AudioFormat, export_audio};
 pub use encode::{Cancelled, ExportError, ExportReport, Progress, export};
 pub use gif::{Dither, GifSettings, export_gif};
 pub use picture::{PictureFormat, save_picture};
 pub use presets::{PRESETS, Preset};
+pub use proxy::{AUTO_PROXY_ABOVE, make_proxy, proxy_path};
 
 use std::path::PathBuf;
 use vz_core::{FrameRate, Micros, Project};

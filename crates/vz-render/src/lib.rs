@@ -56,6 +56,8 @@ pub struct Renderer {
     text: TextEngine,
     shapes: ShapeCache,
     luts: lut::LutCache,
+    /// Original video file → smaller stand-in copy, used instead of the original (for previews only).
+    proxies: HashMap<PathBuf, PathBuf>,
 }
 
 /// One layer ready to be drawn.
@@ -258,6 +260,15 @@ fn decode_bucket(largest_scale: f32) -> u32 {
 impl Renderer {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Use these smaller copies instead of the original videos (the previews do; the export never does).
+    pub fn set_proxies(&mut self, proxies: HashMap<PathBuf, PathBuf>) {
+        if proxies != self.proxies {
+            self.proxies = proxies;
+            // readers of the old files are not wanted any more
+            self.sources.clear();
+        }
     }
 
     /// Why a file could not be drawn, if it could not.
@@ -530,7 +541,18 @@ impl Renderer {
         let key = (path.clone(), slot);
         // (re)open when new, or when the picture size we need has changed
         if !matches!(self.sources.get(&key), Some(open) if open.size == wanted) {
-            match FrameSource::open(path, wanted) {
+            let stand_in = self.proxies.get(path).filter(|p| p.exists());
+            let opened = match stand_in {
+                Some(proxy) => FrameSource::open(proxy, wanted).or_else(|e| {
+                    tracing::warn!(
+                        "proxy {} does not work ({e}), using the original",
+                        proxy.display()
+                    );
+                    FrameSource::open(path, wanted)
+                }),
+                None => FrameSource::open(path, wanted),
+            };
+            match opened {
                 Ok(source) => {
                     self.sources.insert(
                         key.clone(),

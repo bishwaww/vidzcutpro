@@ -1016,9 +1016,20 @@ fn details(ui: &mut egui::Ui, ctx: &mut Ctx<'_>) {
                 ui.label("Rec. 709 SDR");
             });
             row(ui, "Proxy", |ui| {
-                let mut off = false;
-                ui.add_enabled(false, egui::Checkbox::new(&mut off, "Use proxies"))
-                    .on_disabled_hover_text("Coming in Phase 7");
+                ui.vertical(|ui| {
+                    if ui
+                        .checkbox(&mut ctx.settings.prefs.use_proxies, "Use proxies")
+                        .on_hover_text(
+                            "While you edit, show smaller copies of big videos. The export always uses the originals.",
+                        )
+                        .changed()
+                    {
+                        ctx.settings.save();
+                    }
+                    if let Some(text) = &ctx.proxy_status {
+                        ui.label(RichText::new(text).color(theme::MUTED).small());
+                    }
+                });
             });
             row(ui, "Saved to", |ui| {
                 match &ctx.doc.path {

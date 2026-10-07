@@ -6,6 +6,7 @@ use crate::editor::{self, Action, EditorState};
 use crate::export_dialog::{ExportContext, ExportDialog};
 use crate::home::{self, RecentItem};
 use crate::preview::Preview;
+use crate::proxies::Proxies;
 use crate::settings::UiSettings;
 use crate::theme;
 use crate::waveforms::Waveforms;
@@ -65,6 +66,10 @@ pub struct VidzApp {
     preview: Preview,
     thumbs: HashMap<MediaId, egui::TextureHandle>,
     waveforms: Waveforms,
+    proxies: Proxies,
+    /// What the preview was last told about proxies and its cache, so it is only told again when something changed.
+    last_proxy_key: Option<(u64, bool)>,
+    last_cache_mb: u32,
     missing: HashSet<MediaId>,
     player_texture: Option<egui::TextureHandle>,
     /// What the preview was last asked to draw: (document, revision, time, size).
@@ -140,6 +145,9 @@ impl VidzApp {
             dev,
             media: MediaWorker::start(wake.clone()),
             waveforms: Waveforms::new(wake.clone()),
+            proxies: Proxies::new(wake.clone()),
+            last_proxy_key: None,
+            last_cache_mb: 0,
             preview: Preview::start(wake),
             thumbs: HashMap::new(),
             missing: HashSet::new(),
@@ -565,6 +573,33 @@ impl VidzApp {
         ctx.request_repaint();
     }
 
+    /// Keep the proxy maker and the preview's picture cache in step with the project and the settings.
+    fn sync_proxies(&mut self) {
+        let prefs = self.settings.prefs.clone();
+        self.proxies.update(&self.doc.project, prefs.auto_proxy);
+        let key = (self.proxies.generation, prefs.use_proxies);
+        if self.last_proxy_key != Some(key) {
+            let map = if prefs.use_proxies {
+                self.proxies.map(&self.doc.project)
+            } else {
+                std::collections::HashMap::new()
+            };
+            self.preview.set_proxies(map);
+            self.last_proxy_key = Some(key);
+            self.last_request = None; // draw the picture again with the new source
+        }
+        vz_media::hw::set_mode(match prefs.hardware_decode.as_str() {
+            "always" => vz_media::hw::Mode::Always,
+            "never" => vz_media::hw::Mode::Never,
+            _ => vz_media::hw::Mode::Automatic,
+        });
+        if self.last_cache_mb != prefs.cache_mb {
+            self.preview
+                .set_cache_limit(prefs.cache_mb as usize * 1024 * 1024);
+            self.last_cache_mb = prefs.cache_mb;
+        }
+    }
+
     /// Ask the preview thread for the picture at the playhead whenever something it shows has changed.
     fn sync_preview(&mut self) {
         let project_key = (self.doc_serial, self.doc.revision());
@@ -630,6 +665,11 @@ impl VidzApp {
                 }
             }
             Action::Relink(id) => self.relink(id),
+            Action::MakeProxy(id) => {
+                self.proxies.request(&self.doc.project, id);
+                self.editor
+                    .say("Making a proxy in the background. Editing carries on as normal.");
+            }
         }
     }
 
@@ -944,6 +984,7 @@ impl eframe::App for VidzApp {
             Screen::Editor => {
                 self.advance_playback(&ctx);
                 self.waveforms.update(&self.doc.project);
+                self.sync_proxies();
                 let mut ed = editor::Ctx {
                     doc: &mut self.doc,
                     state: &mut self.editor,
@@ -956,6 +997,7 @@ impl eframe::App for VidzApp {
                     player_texture: self.player_texture.as_ref(),
                     actions: Vec::new(),
                     saved_at: self.saved_at.clone(),
+                    proxy_status: self.proxies.status(),
                 };
                 let sizes_changed = editor::show(ui, &mut ed);
                 let actions = std::mem::take(&mut ed.actions);
@@ -976,6 +1018,9 @@ impl eframe::App for VidzApp {
 
         if crate::settings_window::show(&ctx, &mut self.editor.settings_ui, &mut self.settings) {
             self.settings_dirty = true;
+        }
+        if std::mem::take(&mut self.editor.settings_ui.delete_proxies) {
+            self.proxies.delete_all();
         }
         self.show_dialog(&ctx);
         if let Some(dialog) = &mut self.export
