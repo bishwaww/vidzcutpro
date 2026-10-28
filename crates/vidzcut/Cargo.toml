@@ -15,3 +15,6 @@ vz-ui = { path = "../vz-ui" }
 tracing.workspace = true
 tracing-subscriber.workspace = true
 directories.workspace = true
+
+[build-dependencies]
+winresource = "0.1"

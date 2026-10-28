@@ -3333,6 +3333,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde_spanned"
+version = "1.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4e7523beb55eece201a2356bee0bbca0d1ab466c14c07703b2e0ee6d42cb0c2c"
+dependencies = [
+ "serde_core",
+]
+
+[[package]]
 name = "sharded-slab"
 version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3387,7 +3396,7 @@ checksum = "e3a9fe34e3e7a50316060351f37187a3f546bce95496156754b601a5fa71b76e"
 
 [[package]]
 name = "sinhala-spike"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "cosmic-text",
  "eframe",
@@ -3736,6 +3745,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "toml"
+version = "1.1.6+spec-1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "920602543f0911ab71da12c50d59701da54c196d1a2bf5cb4b75667f137a406a"
+dependencies = [
+ "indexmap",
+ "serde_core",
+ "serde_spanned",
+ "toml_datetime",
+ "toml_parser",
+ "toml_writer",
+ "winnow",
+]
+
+[[package]]
 name = "toml_datetime"
 version = "1.1.1+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3764,6 +3788,12 @@ checksum = "1d38ac1cf9b95face32296c0a3ede1fdc270627c9d9c02a7274dd6d960dc4d56"
 dependencies = [
  "winnow",
 ]
+
+[[package]]
+name = "toml_writer"
+version = "1.1.3+spec-1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "06bdbd8cfc056b8d2e2e85f29b56a3bdbecb527cef81eb39e3e7b98af4652770"
 
 [[package]]
 name = "tracing"
@@ -3975,18 +4005,19 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vidzcut"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "directories",
  "tracing",
  "tracing-subscriber",
  "vz-core",
  "vz-ui",
+ "winresource",
 ]
 
 [[package]]
 name = "vz-anim"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -3994,7 +4025,7 @@ dependencies = [
 
 [[package]]
 name = "vz-audio"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "cpal",
  "crossbeam-channel",
@@ -4008,7 +4039,7 @@ dependencies = [
 
 [[package]]
 name = "vz-core"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -4019,7 +4050,7 @@ dependencies = [
 
 [[package]]
 name = "vz-export"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "color_quant",
  "ffmpeg-next",
@@ -4037,7 +4068,7 @@ dependencies = [
 
 [[package]]
 name = "vz-media"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "crossbeam-channel",
  "ffmpeg-next",
@@ -4049,7 +4080,7 @@ dependencies = [
 
 [[package]]
 name = "vz-presets"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "vz-anim",
  "vz-core",
@@ -4057,7 +4088,7 @@ dependencies = [
 
 [[package]]
 name = "vz-render"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "image",
  "rayon",
@@ -4072,7 +4103,7 @@ dependencies = [
 
 [[package]]
 name = "vz-text"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "cosmic-text",
  "image",
@@ -4084,7 +4115,7 @@ dependencies = [
 
 [[package]]
 name = "vz-ui"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "chrono",
  "crossbeam-channel",
@@ -4108,7 +4139,7 @@ dependencies = [
 
 [[package]]
 name = "vz-vector"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "tiny-skia",
  "vz-core",
@@ -4892,6 +4923,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "23b97319f7b8343df12cc98938e5c3eb436064524c8d2b4e30a1d3a36eecdf81"
 dependencies = [
  "memchr",
+]
+
+[[package]]
+name = "winresource"
+version = "0.1.34"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a2bc6d36480b829272a5bdabf08e6dca8004761c1da7e35efef800540c66221b"
+dependencies = [
+ "toml",
+ "version_check",
 ]
 
 [[package]]

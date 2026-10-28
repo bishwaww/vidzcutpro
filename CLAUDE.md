@@ -23,7 +23,12 @@
 - `D:\Projects\vidzcut` — the old Python/Qt prototype v1.4.0 (**reference only**, don't copy architecture). Notes: `docs/PROTOTYPE_NOTES.md`. Real test video: `D:/Gloma/with track.mp4` (read-only).
 - Docs: `docs/SPEC.md`, `docs/ARCHITECTURE.md`, `docs/PROTOTYPE_NOTES.md`, `docs/BUILDING.md`, `ROADMAP.md`.
 
-## Current state (2026-10-08) — Phase 6 and Phase 7a-7d built (gate passed), waiting for the owner's hand test; Phase 5 hand test was never reported back
+## Current state (2026-10-28) — Phases 6 and 7 (7a–7e, Windows installer made, unsigned) built, gate passed, waiting for the owner's hand test; Phase 5 hand test was never reported back
+### Phase 7e additions (read this first)
+- Installer: `scripts/package-windows.ps1` → `packaging/installer.json` (cargo-packager 0.11.8, NSIS, per-user) → `dist/vidzcut_0.1.0_x64-setup.exe`. The tool cannot read its config from a file on this PC (error 267 from `\?\` paths), so the script passes the JSON as text with `Start-Process`. `crates/vidzcut/build.rs` embeds `assets/brand/icon.ico` + version (`winresource`). `scripts/make-licence-list.ps1` writes `packaging/THIRD_PARTY_CRATES.txt`; `packaging/FFMPEG-NOTICE.txt` + `FFMPEG-LICENSE.txt` are the LGPL papers. Full how-to: `docs/RELEASE.md`. Workspace version is **0.1.0** (bump it in `Cargo.toml` and `packaging/installer.json` together).
+- Checked: silent install into a temp folder, start with an empty PATH, import + show a video, uninstall. **Not checked: double-clicking the installer with the Windows wizard, SmartScreen, Start menu entry look.**
+- Open owner decisions: keep MPL-2.0 `option-ext` (via `directories`)? Confirm OpenH264's licence/patent terms. Not done: macOS installer, signing, `.vzp` file association, Sinhala interface strings, accent colour.
+
 ### Phase 7d additions (read this first)
 - **Picture cache**: `vz-ui/src/preview.rs` `FrameCache` (rendered preview pictures by (time, size), oldest dropped first, cleared on every project / proxy change, size from `Preferences.cache_mb`).
 - **Proxies**: `vz-export/src/proxy.rs` (`make_proxy` re-encodes with `FrameSource` pictures → H.264, 960 px long side, GOP = fps/2, hardware encoder first; `proxy_path` = name + hash of (path, size, length) so a changed file gets a new proxy); `vz-ui/src/proxies.rs` (`Proxies`: scans video assets each frame (cheap: only new / relinked ones are looked at), queues videos bigger than 1920 px when `auto_proxy`, one thread at a time, `map()` original → proxy, `status()` for the Details line, `generation` for change detection); `Renderer::set_proxies` (vz-render; reader opens the proxy instead of the original when it exists, falls back to the original if it will not open; **only the preview thread sets it, export never does**). `VidzApp::sync_proxies` runs every editor frame and also sets the graphics-card mode and cache size. Files: `<data dir>/proxies/`.
@@ -118,7 +123,7 @@
 - FFmpeg n9.0 **LGPL shared** (BtbN build) in `third_party\ffmpeg` (git-ignored). Matches crate `ffmpeg-next 9.0.0`. Has h264/hevc/av1 nvenc/qsv/amf + libopenh264; no x264/x265 (good).
 
 ## Known issues
-- The Templates tab (Phase 7) is a placeholder ("Coming in Phase 7"); the Library / Subprojects sub-menus too. Variable fonts are used at their default weight in the interface (video text selects bold properly).
+- The Library / Subprojects sub-menus of Media are placeholders ("Coming soon"). Variable fonts are used at their default weight in the interface (video text selects bold properly).
 
 ## Next step
-Owner runs the **Phase 6** and **Phase 7** checklists in `docs/TESTING.md` and says OK or reports problems → then **7e** (installers, ask the owner about code signing first). Phase 8 after that.
+Owner runs the **Phase 6** and **Phase 7** checklists in `docs/TESTING.md` (including installing with `dist\vidzcut_0.1.0_x64-setup.exe`) and says OK or reports problems → **Phase 8** (graph editor, motion paths, motion blur / wiggle, tracking + stabilisation). Also open: the MPL question, OpenH264 licence, macOS, signing.

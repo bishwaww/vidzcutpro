@@ -1,0 +1,25 @@
+vidzcut and FFmpeg
+==================
+
+vidzcut uses the FFmpeg libraries (avcodec, avformat, avutil, swscale, swresample ... the .dll files next to
+vidzcut.exe) to read and write video and sound files.
+
+These libraries are free software under the GNU Lesser General Public Licence (LGPL) version 3. The build we ship is
+the "lgpl-shared" build from https://github.com/BtbN/FFmpeg-Builds (FFmpeg n9.0). It was NOT built with --enable-gpl.
+The libraries are used as separate DLL files, so you may replace them with your own build of FFmpeg of the same
+version (the same file names).
+
+The full text of the licence is in the file FFMPEG-LICENSE.txt (and https://www.gnu.org/licenses/lgpl-3.0.html).
+
+Where to get the source code of the FFmpeg version we ship:
+  - FFmpeg source: https://ffmpeg.org/download.html (release n9.0)
+  - The build scripts that made these DLLs: https://github.com/BtbN/FFmpeg-Builds
+If you cannot get it there, write to the vidzcut owner and the source will be sent to you.
+
+The FFmpeg build also contains these separate free libraries:
+  - OpenH264 (BSD-2-Clause, Cisco) for software H.264 video
+  - LAME (LGPL) for MP3 sound
+  - kvazaar (BSD-3-Clause) for software HEVC video
+and others listed in FFMPEG-LICENSE.txt. See THIRD_PARTY_LICENSES.md for everything vidzcut uses.
+
+vidzcut itself is not part of FFmpeg and FFmpeg's authors do not endorse it.

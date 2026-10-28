@@ -55,5 +55,5 @@ Drive the real window like a person (for automatic checks): `VIDZCUT_SCRIPT="wai
 
 ## Known gaps
 
-- macOS path untested; installers (Windows + macOS) come in Phase 7.
+- macOS path untested and no macOS installer yet; the Windows installer is described in docs/RELEASE.md.
 - The setup script has been tested on a machine where everything was already installed; the "install what is missing" branches have not been exercised end-to-end.

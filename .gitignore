@@ -16,3 +16,6 @@ Cargo.lock.bak
 .idea/
 Thumbs.db
 .DS_Store
+
+# installers made by scripts/package-windows.ps1
+/dist/

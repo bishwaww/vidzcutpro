@@ -55,3 +55,8 @@ Status (2026-10-03, end of Phase 2): **direct dependencies only**. A full check 
 
 ## Flagged for the owner
 - **resvg** (MPL-2.0, a weak copyleft licence) would be needed to import SVG stickers. Not added. Say if you want it; until then stickers are PNG / GIF / WebP / APNG (through FFmpeg) plus vidzcut's own built-in shapes.
+
+## Final licence check for release (2026-10-28)
+- All 496 Rust libraries vidzcut is built from were checked automatically (`scripts/make-licence-list.ps1`, output `packaging/THIRD_PARTY_CRATES.txt`, shipped with the installer). Every one is MIT, Apache-2.0, BSD, ISC, Zlib, Unicode, Unlicense, 0BSD, BSL-1.0 or WTFPL, except the one below. Where a library offers a choice we take the permissive one: `self_cell` (Apache-2.0 OR GPL-2.0 → Apache-2.0), `r-efi` (MIT OR Apache-2.0 OR LGPL → MIT).
+- **`option-ext` 0.2.0 is MPL-2.0** (a weak, file-level copyleft licence). It comes in through the `directories` library (which finds the settings and log folders) and has been there since Phase 0, unmodified. MPL-2.0 allows this as long as the licence notice stays and the MPL-covered source stays available (it is: https://crates.io/crates/option-ext, https://github.com/soc/option-ext). The installer ships the notice. **Owner decision pending:** keep it (recommended: nothing to change) or replace `directories` with our own small code.
+- FFmpeg LGPL notice and source offer: `packaging/FFMPEG-NOTICE.txt`, licence text `packaging/FFMPEG-LICENSE.txt` (both installed next to vidzcut.exe).

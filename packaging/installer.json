@@ -1,0 +1,29 @@
+{
+  "enabled": true,
+  "productName": "vidzcut",
+  "identifier": "app.vidzcut.editor",
+  "version": "0.1.0",
+  "description": "A video editor with first-class Sinhala and Tamil text.",
+  "longDescription": "vidzcut is a desktop video editor: multi-track timeline, text with correct Sinhala and Tamil shaping, effects, colour, audio tools and export.",
+  "authors": ["vidzcut"],
+  "copyright": "vidzcut",
+  "outDir": "dist",
+  "icons": ["assets/brand/icon.ico", "assets/brand/icon.png"],
+  "binariesDir": "target/release",
+  "binaries": [{ "path": "vidzcut", "main": true }],
+  "resources": [
+    { "src": "third_party/ffmpeg/bin/avcodec-63.dll", "target": "avcodec-63.dll" },
+    { "src": "third_party/ffmpeg/bin/avdevice-63.dll", "target": "avdevice-63.dll" },
+    { "src": "third_party/ffmpeg/bin/avfilter-12.dll", "target": "avfilter-12.dll" },
+    { "src": "third_party/ffmpeg/bin/avformat-63.dll", "target": "avformat-63.dll" },
+    { "src": "third_party/ffmpeg/bin/avutil-61.dll", "target": "avutil-61.dll" },
+    { "src": "third_party/ffmpeg/bin/swresample-7.dll", "target": "swresample-7.dll" },
+    { "src": "third_party/ffmpeg/bin/swscale-10.dll", "target": "swscale-10.dll" },
+    { "src": "packaging/FFMPEG-NOTICE.txt", "target": "FFMPEG-NOTICE.txt" },
+    { "src": "packaging/FFMPEG-LICENSE.txt", "target": "FFMPEG-LICENSE.txt" },
+    { "src": "packaging/THIRD_PARTY_CRATES.txt", "target": "THIRD_PARTY_CRATES.txt" },
+    { "src": "packaging/THIRD_PARTY_LICENSES.md", "target": "THIRD_PARTY_LICENSES.md" }
+  ],
+  "formats": ["nsis"],
+  "nsis": { "installMode": "currentUser" }
+}

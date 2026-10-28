@@ -271,3 +271,14 @@ You need a big video (4K or bigger) for most of these. A phone's 4K clip is perf
 6. Scrub back and forth over the same few seconds, or loop-play a short part: the second time it should be instant (picture cache). **Settings → Performance → Memory for pictures** changes how much is kept.
 
 **Please tell me:** whether 4K playback feels better, how long a proxy takes for a minute of video, and anything that looks different between the preview and the export.
+
+## Phase 7e — the installer (your checklist)
+
+The installer is `D:\Projects\vidzcutpro\dist\vidzcut_0.1.0_x64-setup.exe` (made by `scripts\package-windows.ps1`). It is **not signed**.
+
+1. Double-click the installer. Windows may say **"Windows protected your PC"**: click **More info → Run anyway** (this is normal for an unsigned program).
+2. Follow the steps. It installs only for you (no administrator question) and adds **vidzcut** to the Start menu. Start it from there.
+3. Check the icon (taskbar, Start menu) and that a video imports and plays (this proves the FFmpeg files came along). Look at the installed folder (`%LOCALAPPDATA%\vidzcut`): `FFMPEG-NOTICE.txt`, `THIRD_PARTY_CRATES.txt` should be there.
+4. Uninstall from **Settings → Apps → Installed apps → vidzcut**. Your projects, settings, recordings and templates stay.
+
+**Please tell me:** anything the installer shows that looks wrong or scary, a missing icon, or anything that does not start.
