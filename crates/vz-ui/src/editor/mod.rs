@@ -11,6 +11,7 @@ mod look_panel;
 mod pen;
 mod player;
 mod scopes_window;
+mod shapes_page;
 mod sticker_panel;
 mod template_panel;
 mod text_panel;

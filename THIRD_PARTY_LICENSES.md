@@ -37,11 +37,13 @@ Status (2026-10-03, end of Phase 2): **direct dependencies only**. A full check 
 ## Fonts (bundled in `assets/fonts/`, downloaded 2026-10-03 from the Google Fonts repository)
 | Font | Licence | Used for |
 |---|---|---|
+| Roboto (variable) | SIL OFL 1.1 (`Roboto-OFL.txt`), downloaded 2026-10-28 from github.com/google/fonts | the interface font (all menus, panels, buttons) |
+| Roboto Mono (variable) | SIL OFL 1.1 (`RobotoMono-OFL.txt`), same source | timecodes and numbers in the interface |
 | Inter (variable) | SIL OFL 1.1 (`Inter-OFL.txt`) | default video text font |
 | Noto Sans Sinhala (variable) | SIL OFL 1.1 (`NotoSansSinhala-OFL.txt`) | Sinhala in video text and in the interface |
 | Noto Serif Sinhala (variable) | SIL OFL 1.1 (same Noto Project licence) | Sinhala serif text style |
 | Noto Sans Tamil (variable) | SIL OFL 1.1 (same Noto Project licence) | Tamil in video text and in the interface |
-| egui's built-in fonts (Ubuntu-Light, Hack, emoji icon fonts, Noto Emoji) | OFL / Ubuntu Font Licence / MIT (as shipped inside egui) | interface (Latin) |
+| egui's built-in fonts (Ubuntu-Light, Hack, emoji icon fonts, Noto Emoji) | OFL / Ubuntu Font Licence / MIT (as shipped inside egui) | only fill in symbols Roboto lacks |
 | Windows' Nirmala UI / other system fonts | Microsoft / system fonts, only read from the user's own computer, never copied or shipped | last-resort fallback for symbols in the interface; also offered in the font list for video text |
 
 ## Icons / artwork

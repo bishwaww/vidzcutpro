@@ -58,7 +58,15 @@ pub fn apply(ctx: &egui::Context) {
 fn install_fonts(ctx: &egui::Context) {
     // Sinhala and Tamil letters come with the program, so they look the same on every computer
     let mut fonts = FontDefinitions::default();
-    let bundled: [(&str, &'static [u8]); 3] = [
+    let bundled: [(&str, &'static [u8]); 5] = [
+        (
+            "roboto",
+            include_bytes!("../../../assets/fonts/Roboto-Variable.ttf"),
+        ),
+        (
+            "roboto-mono",
+            include_bytes!("../../../assets/fonts/RobotoMono-Variable.ttf"),
+        ),
         (
             "noto-sinhala",
             include_bytes!("../../../assets/fonts/NotoSansSinhala-Variable.ttf"),
@@ -88,6 +96,17 @@ fn install_fonts(ctx: &egui::Context) {
             .font_data
             .insert("system-symbols".into(), FontData::from_owned(bytes).into());
     }
+    // Roboto is the interface font (Roboto Mono for the timecodes); the other fonts only fill in what it lacks
+    fonts
+        .families
+        .entry(FontFamily::Proportional)
+        .or_default()
+        .insert(0, "roboto".into());
+    fonts
+        .families
+        .entry(FontFamily::Monospace)
+        .or_default()
+        .insert(0, "roboto-mono".into());
     for family in [FontFamily::Proportional, FontFamily::Monospace] {
         let list = fonts.families.entry(family).or_default();
         list.push("noto-sinhala".into());
@@ -125,6 +144,19 @@ pub mod icons {
     pub const WAND: char = '\u{e357}';
     pub const SLIDERS: char = '\u{e29a}';
     pub const TEMPLATE: char = '\u{e207}';
+    pub const POINTER: char = '\u{e1c3}';
+    pub const UNDO: char = '\u{e2a1}';
+    pub const REDO: char = '\u{e2a0}';
+    pub const SCISSORS: char = '\u{e14e}';
+    pub const TRIM_LEFT: char = '\u{e457}';
+    pub const TRIM_RIGHT: char = '\u{e459}';
+    pub const TRASH: char = '\u{e18e}';
+    pub const FLAG: char = '\u{e0d1}';
+    pub const GROUP: char = '\u{e464}';
+    pub const SNOWFLAKE: char = '\u{e165}';
+    pub const PLUS: char = '\u{e13d}';
+    pub const FOLDER_OPEN: char = '\u{e247}';
+    pub const PEN: char = '\u{e131}';
 }
 
 /// The big yellow call-to-action button.

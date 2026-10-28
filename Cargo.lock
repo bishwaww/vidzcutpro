@@ -4109,6 +4109,7 @@ dependencies = [
  "image",
  "serde_json",
  "tracing",
+ "ttf-parser",
  "vz-anim",
  "vz-core",
 ]

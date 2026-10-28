@@ -340,3 +340,109 @@ fn units_follow_the_short_side() {
     assert_eq!(unit(1080, 1920), 1.0);
     assert_eq!(unit(3840, 2160), 2.0);
 }
+
+/// Old-style Sinhala fonts (FM Abhaya, 4u-Nilakshi ...) put Sinhala letters on the Latin keys. Typing "dsdgrg@" in
+/// such a font must draw Sinhala shapes, not the plain Latin letters. Only runs where such a font is installed.
+#[test]
+fn legacy_sinhala_fonts_draw_their_own_letters() {
+    let mut e = TextEngine::new();
+    let installed = e.families();
+    let Some(legacy) = ["4u-Nilakshi", "FM Abhaya", "FM Arjunn", "FM Bindumathi"]
+        .into_iter()
+        .find(|f| installed.iter().any(|i| i == f))
+    else {
+        eprintln!("no legacy Sinhala font installed here, skipping");
+        return;
+    };
+    let plain = e.render(&text("dsdgrg@"), 1.0);
+    let in_legacy = e.render(&styled("dsdgrg@", |s| s.font = legacy.to_string()), 1.0);
+    dump("legacy_plain", &plain);
+    dump("legacy_font", &in_legacy);
+    println!(
+        "{legacy}: plain {}x{} alpha {}, legacy {}x{} alpha {}",
+        plain.width,
+        plain.height,
+        alpha_sum(&plain),
+        in_legacy.width,
+        in_legacy.height,
+        alpha_sum(&in_legacy)
+    );
+    assert_ne!(plain.rgba, in_legacy.rgba, "{legacy} was not used");
+}
+
+#[test]
+#[ignore = "prints how an installed legacy font is built"]
+fn show_how_a_legacy_font_is_built() {
+    let name = std::env::var("VZ_FONT").unwrap_or_else(|_| "4u-Nilakshi".into());
+    let mut e = TextEngine::new();
+    let _ = e.families();
+    let db = e.system().db();
+    let faces: Vec<_> = db
+        .faces()
+        .filter(|f| {
+            f.families
+                .iter()
+                .any(|(n, _)| n.eq_ignore_ascii_case(&name))
+        })
+        .map(|f| {
+            (
+                f.id,
+                format!(
+                    "weight {} style {:?} stretch {:?}",
+                    f.weight.0, f.style, f.stretch
+                ),
+                f.families.clone(),
+            )
+        })
+        .collect();
+    println!("{} face(s) named {name}: {faces:?}", faces.len());
+    for (id, _, _) in faces {
+        db.with_face_data(id, |data, index| {
+            let face = ttf_parser::Face::parse(data, index).unwrap();
+            println!("glyphs: {}", face.number_of_glyphs());
+            for sub in face.tables().cmap.unwrap().subtables {
+                println!(
+                    "cmap platform {:?} encoding {} unicode {} | d={:?} F064={:?} 0D9A={:?}",
+                    sub.platform_id,
+                    sub.encoding_id,
+                    sub.is_unicode(),
+                    sub.glyph_index(u32::from('d')),
+                    sub.glyph_index(0xF064),
+                    sub.glyph_index(0x0D9A)
+                );
+            }
+        });
+    }
+}
+
+#[test]
+#[ignore = "prints which font each letter really came from"]
+fn show_which_font_draws_each_letter() {
+    let name = std::env::var("VZ_FONT").unwrap_or_else(|_| "4u-Nilakshi".into());
+    let mut e = TextEngine::new();
+    let laid = e.lay_out(&styled("dsdgrg@", |s| s.font = name.clone()), 1.0);
+    let db_names: Vec<(cosmic_text::fontdb::ID, String)> = e
+        .system()
+        .db()
+        .faces()
+        .map(|f| {
+            (
+                f.id,
+                f.families
+                    .first()
+                    .map(|(n, _)| n.clone())
+                    .unwrap_or_default(),
+            )
+        })
+        .collect();
+    for run in laid.buffer.layout_runs() {
+        for g in run.glyphs {
+            let who = db_names
+                .iter()
+                .find(|(id, _)| *id == g.font_id)
+                .map(|(_, n)| n.as_str())
+                .unwrap_or("?");
+            println!("glyph id {} from font {who}", g.glyph_id);
+        }
+    }
+}

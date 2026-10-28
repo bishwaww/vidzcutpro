@@ -72,6 +72,8 @@ pub struct TextEngine {
     swash: Option<SwashCache>,
     images: HashMap<String, Arc<TextImage>>,
     sizes: HashMap<String, (f32, f32)>,
+    /// Which font families keep their letters in the Symbol range (see `is_symbol_font`).
+    symbol_fonts: HashMap<String, bool>,
 }
 
 struct Laid {
@@ -132,18 +134,131 @@ impl TextEngine {
         out
     }
 
+    /// The weight to ask `family` for when normal (or bold) text is wanted: the weight of its face that is closest.
+    /// Asking for a number the font does not have makes the text engine ignore the font altogether, and some fonts
+    /// (old Sinhala ones) declare strange numbers like 5.
+    fn face_weight(&mut self, family: &str, bold: bool) -> Weight {
+        let wanted: i32 = if bold { 700 } else { 400 };
+        let key = family.to_lowercase();
+        let closest = self
+            .system()
+            .db()
+            .faces()
+            .filter(|f| f.families.iter().any(|(n, _)| n.to_lowercase() == key))
+            .map(|f| f.weight.0)
+            .min_by_key(|w| (i32::from(*w) - wanted).abs());
+        match closest {
+            // not a real weight (they run from 100 to 900): use the number the font itself gives
+            Some(w) if !(100..=1000).contains(&w) => Weight(w),
+            _ if bold => Weight::BOLD,
+            _ => Weight::NORMAL,
+        }
+    }
+
+    /// Is this font an old-style "legacy" one that keeps its letters in the Windows Symbol range (U+F020 and up)?
+    /// Old Sinhala fonts (FM Abhaya, 4u-Nilakshi ...) are like that: the key "d" draws a Sinhala letter in Word.
+    fn is_symbol_font(&mut self, family: &str) -> bool {
+        let key = family.to_lowercase();
+        if let Some(known) = self.symbol_fonts.get(&key) {
+            return *known;
+        }
+        let db = self.system().db();
+        let id = db
+            .faces()
+            .find(|f| {
+                f.families
+                    .iter()
+                    .any(|(name, _)| name.to_lowercase() == key)
+            })
+            .map(|f| f.id);
+        let symbol = id
+            .and_then(|id| {
+                db.with_face_data(id, |data, index| {
+                    let face = ttf_parser::Face::parse(data, index).ok()?;
+                    let cmap = face.tables().cmap?;
+                    let mut symbol = false;
+                    let mut ordinary = false;
+                    for sub in cmap.subtables {
+                        if sub.platform_id == ttf_parser::PlatformId::Windows
+                            && sub.encoding_id == 0
+                        {
+                            symbol |= sub.glyph_index(0xF064).is_some();
+                        } else if sub.is_unicode() {
+                            // a real Unicode table that knows the plain letter "d" means no mapping is needed
+                            ordinary |= sub.glyph_index(u32::from('d')).is_some();
+                        }
+                    }
+                    Some(symbol && !ordinary)
+                })
+                .flatten()
+            })
+            .unwrap_or(false);
+        self.symbol_fonts.insert(key, symbol);
+        symbol
+    }
+
+    /// For fonts that keep their letters in the Symbol range, move the typed Latin keys there (one character
+    /// for one character, so letter positions stay the same). Spaces and line breaks stay as they are.
+    fn map_legacy_keys(&mut self, text: &str, base: &str, spans: &[vz_core::StyleSpan]) -> String {
+        let mut families: Vec<&str> = vec![base];
+        families.extend(spans.iter().filter_map(|s| s.font.as_deref()));
+        if !families.iter().any(|f| self.is_symbol_font(f)) {
+            return text.to_string();
+        }
+        text.chars()
+            .enumerate()
+            .map(|(i, c)| {
+                let family = spans
+                    .iter()
+                    .rev()
+                    .find(|s| s.start <= i && i < s.end && s.font.is_some())
+                    .and_then(|s| s.font.as_deref())
+                    .unwrap_or(base);
+                if ('!'..='\u{FF}').contains(&c) && c != '\u{7F}' && self.is_symbol_font(family) {
+                    char::from_u32(0xF000 + u32::from(c)).unwrap_or(c)
+                } else {
+                    c
+                }
+            })
+            .collect()
+    }
+
     /// Lay the text out at `factor` canvas pixels per reference pixel.
     fn lay_out(&mut self, text: &TextContent, factor: f32) -> Laid {
         let style = &text.style;
         let size = (style.size * factor).max(1.0);
         let line_height = size * LINE_HEIGHT * style.line_spacing.max(0.2);
         let metrics = Metrics::new(size, line_height);
-        let cased = rich::apply_case(&text.text, style.case);
-        let segments = rich::segments(&cased, &text.spans, style.color);
         let base_family = if style.font.is_empty() {
             DEFAULT_FONT
         } else {
             style.font.as_str()
+        };
+        let typed = rich::apply_case(&text.text, style.case);
+        // old-style (legacy) Sinhala fonts: the keys that were typed must reach their letters in the font
+        let cased = self.map_legacy_keys(&typed, base_family, &text.spans);
+        let segments = rich::segments(&cased, &text.spans, style.color);
+        // the weight to ask each font for: the one it really has (some fonts declare odd numbers)
+        let mut weights: HashMap<(String, bool), Weight> = HashMap::new();
+        for (family, bold) in
+            std::iter::once((base_family, style.bold)).chain(segments.iter().map(|s| {
+                (
+                    s.font.as_deref().unwrap_or(base_family),
+                    s.bold.unwrap_or(style.bold),
+                )
+            }))
+        {
+            if let std::collections::hash_map::Entry::Vacant(slot) =
+                weights.entry((family.to_string(), bold))
+            {
+                slot.insert(self.face_weight(family, bold));
+            }
+        }
+        let weight_of = |family: &str, bold: bool| {
+            weights
+                .get(&(family.to_string(), bold))
+                .copied()
+                .unwrap_or(if bold { Weight::BOLD } else { Weight::NORMAL })
         };
         let base_color = Color::rgba(
             style.color[0],
@@ -153,11 +268,7 @@ impl TextEngine {
         );
         let default_attrs = Attrs::new()
             .family(Family::Name(base_family))
-            .weight(if style.bold {
-                Weight::BOLD
-            } else {
-                Weight::NORMAL
-            })
+            .weight(weight_of(base_family, style.bold))
             .style(if style.italic {
                 Style::Italic
             } else {
@@ -176,7 +287,7 @@ impl TextEngine {
                 let family = seg.font.as_deref().unwrap_or(base_family);
                 let mut attrs = Attrs::new()
                     .family(Family::Name(family))
-                    .weight(if bold { Weight::BOLD } else { Weight::NORMAL })
+                    .weight(weight_of(family, bold))
                     .style(if italic { Style::Italic } else { Style::Normal })
                     .color(color)
                     .letter_spacing(style.letter_spacing);

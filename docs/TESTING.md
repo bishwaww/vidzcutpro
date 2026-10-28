@@ -282,3 +282,10 @@ The installer is `D:\Projects\vidzcutpro\dist\vidzcut_0.1.0_x64-setup.exe` (made
 4. Uninstall from **Settings → Apps → Installed apps → vidzcut**. Your projects, settings, recordings and templates stay.
 
 **Please tell me:** anything the installer shows that looks wrong or scary, a missing icon, or anything that does not start.
+
+## Your feedback of 2026-10-28 — what to check
+
+1. **Timeline buttons are icons now** (arrow, undo, redo, scissors, trim left / right, bin, flag, group, snowflake, +). Rest the mouse on one: its name and shortcut appear.
+2. **The whole interface is in Roboto** (and Roboto Mono for the time numbers). Sinhala and Tamil text in the interface still show correctly.
+3. **Old-style Sinhala fonts** (FM Abhaya, 4u-Nilakshi, DL / CPS / ... fonts that put Sinhala letters on the English keys): add a text, choose the font in **Font**, type with the English keys (for example `dsdgrg`): the Sinhala letters of that font must show in the player. (Cause found: these fonts declare a wrong "weight" number, so vidzcut ignored them and used another font. Fixed.) **Tell me if any old-style font still shows English letters.**
+4. **Stickers → Shapes** looks like CapCut: outline icons on dark tiles (rectangle, circle, triangle, parallelogram, trapezoid, line, arrow) and the **pen tool** as the last tile. Our other shapes (diamond, star, heart, speech bubble ...) are under **More shapes**.

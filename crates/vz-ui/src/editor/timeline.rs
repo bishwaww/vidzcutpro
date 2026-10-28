@@ -12,8 +12,6 @@ use eframe::egui::{self, Align, Layout, Pos2, Rect, RichText, Sense, Stroke};
 use layout::{Frame, Geo, HEADER_W, RULER_H, build_rows};
 use vz_core::{Clip, ClipId, Micros, TrackId, TrackKind, US_PER_SEC};
 
-const COMING_SOON: &str = "Coming soon";
-
 /// Where a dragged clip would land.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct MoveTarget {
@@ -185,10 +183,12 @@ pub fn open_compound(ctx: &mut Ctx<'_>, clip: ClipId) {
     }
 }
 
-fn tool(ui: &mut egui::Ui, label: &str, enabled: bool, hint: &str) -> bool {
+/// A toolbar button that shows only an icon; the words appear when the mouse rests on it.
+fn tool(ui: &mut egui::Ui, icon: char, enabled: bool, hint: &str) -> bool {
     ui.add_enabled(
         enabled,
-        egui::Button::new(RichText::new(label).small()).small(),
+        egui::Button::new(RichText::new(icon).font(theme::icons::font(16.0)))
+            .min_size(egui::vec2(32.0, 26.0)),
     )
     .on_hover_text(hint)
     .on_disabled_hover_text(hint)
@@ -200,16 +200,16 @@ fn toolbar(ui: &mut egui::Ui, ctx: &mut Ctx<'_>) {
     let can_delete = !ctx.state.selection.is_empty();
     ui.horizontal(|ui| {
         ui.add_space(12.0);
-        tool(ui, "Select", false, COMING_SOON);
-        if tool(ui, "Undo", ctx.doc.can_undo(), "Undo (Ctrl+Z)") {
+        tool(ui, theme::icons::POINTER, false, "Select (coming soon)");
+        if tool(ui, theme::icons::UNDO, ctx.doc.can_undo(), "Undo (Ctrl+Z)") {
             ctx.doc.undo();
         }
-        if tool(ui, "Redo", ctx.doc.can_redo(), "Redo (Ctrl+Shift+Z)") {
+        if tool(ui, theme::icons::REDO, ctx.doc.can_redo(), "Redo (Ctrl+Shift+Z)") {
             ctx.doc.redo();
         }
         if tool(
             ui,
-            "Split",
+            theme::icons::SCISSORS,
             can_cut,
             "Split the selected clips (or the main clip) at the playhead (Ctrl+B)",
         ) {
@@ -217,7 +217,7 @@ fn toolbar(ui: &mut egui::Ui, ctx: &mut Ctx<'_>) {
         }
         if tool(
             ui,
-            "Delete left",
+            theme::icons::TRIM_LEFT,
             can_cut,
             "Delete everything left of the playhead in the selected clips (Q)",
         ) {
@@ -225,7 +225,7 @@ fn toolbar(ui: &mut egui::Ui, ctx: &mut Ctx<'_>) {
         }
         if tool(
             ui,
-            "Delete right",
+            theme::icons::TRIM_RIGHT,
             can_cut,
             "Delete everything right of the playhead in the selected clips (W)",
         ) {
@@ -233,7 +233,7 @@ fn toolbar(ui: &mut egui::Ui, ctx: &mut Ctx<'_>) {
         }
         if tool(
             ui,
-            "Delete",
+            theme::icons::TRASH,
             can_delete,
             "Delete the selected clips (Delete). The main track closes the gap.",
         ) {
@@ -241,7 +241,7 @@ fn toolbar(ui: &mut egui::Ui, ctx: &mut Ctx<'_>) {
         }
         if tool(
             ui,
-            "Marker",
+            theme::icons::FLAG,
             true,
             "Add or remove a marker at the playhead (M)",
         ) {
@@ -253,24 +253,24 @@ fn toolbar(ui: &mut egui::Ui, ctx: &mut Ctx<'_>) {
         );
         if tool(
             ui,
-            "Compound",
+            theme::icons::GROUP,
             can_delete,
             "Fold the selected clips into one compound clip (Alt+G). Double-click it to open the inside.",
         ) {
             make_compound(ctx);
         }
-        if is_one_compound && let [id] = ctx.state.selection[..] && tool(ui, "Open", true, "Edit what is inside the compound clip") {
+        if is_one_compound && let [id] = ctx.state.selection[..] && tool(ui, theme::icons::FOLDER_OPEN, true, "Open: edit what is inside the compound clip") {
             open_compound(ctx, id);
         }
         if tool(
             ui,
-            "Freeze",
+            theme::icons::SNOWFLAKE,
             freeze_target(ctx).is_some(),
             "Insert a still picture of the moment under the playhead (3 s)",
         ) {
             freeze_at_playhead(ctx);
         }
-        ui.menu_button(RichText::new("+ Track").small(), |ui| {
+        let add_track = ui.menu_button(RichText::new(theme::icons::PLUS).font(theme::icons::font(16.0)), |ui| {
             for (kind, label) in [
                 (TrackKind::Overlay, "Overlay track"),
                 (TrackKind::Text, "Text track"),
@@ -285,6 +285,9 @@ fn toolbar(ui: &mut egui::Ui, ctx: &mut Ctx<'_>) {
                 }
             }
         });
+        add_track
+            .response
+            .on_hover_text("Add a track (overlay, text, audio or effect)");
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             ui.add_space(12.0);
             ui.add(

@@ -20,6 +20,10 @@ thread_local! {
 }
 
 pub fn show(ui: &mut egui::Ui, ctx: &mut Ctx<'_>) {
+    if ctx.state.sub_menu != 0 {
+        super::shapes_page::show(ui, ctx);
+        return;
+    }
     let presets = if ctx.state.sub_menu == 0 {
         sticker_presets()
     } else {
@@ -62,7 +66,7 @@ pub fn show(ui: &mut egui::Ui, ctx: &mut Ctx<'_>) {
 }
 
 /// Add a shape at the playhead, sized to a good part of the picture.
-fn add(ctx: &mut Ctx<'_>, preset: &ShapePreset) {
+pub(super) fn add(ctx: &mut Ctx<'_>, preset: &ShapePreset) {
     let mut shape = preset.shape.clone();
     // presets are drawn for a 1080 canvas; the same size looks right on any canvas because sizes are in reference pixels
     let k = (NEW_SHAPE_SHARE * 1080.0 / shape.width.max(shape.height).max(1.0)).min(1.4);
