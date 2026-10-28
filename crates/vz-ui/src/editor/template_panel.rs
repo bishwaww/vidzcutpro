@@ -18,11 +18,28 @@ thread_local! {
 }
 
 pub fn show(ui: &mut egui::Ui, ctx: &mut Ctx<'_>) {
-    ui.label(
-        RichText::new("Click one to add it at the playhead. Its parts are grouped: click one to select them all, Alt+click to pick a single part.")
-            .color(theme::MUTED)
-            .small(),
+    show_list(
+        ui,
+        ctx,
+        templates(),
+        "Click one to add it at the playhead. Its parts are grouped: click one to select them all, Alt+click to pick a single part.",
+        false,
     );
+}
+
+/// The Text animations page: the same kind of tiles, but they play while the mouse is on them.
+pub fn show_animations(ui: &mut egui::Ui, ctx: &mut Ctx<'_>) {
+    show_list(
+        ui,
+        ctx,
+        vz_presets::text_animations::text_animations(),
+        "Move the mouse over one to see it play. Click to add it at the playhead; then change the words in the Text tab on the right.",
+        true,
+    );
+}
+
+fn show_list(ui: &mut egui::Ui, ctx: &mut Ctx<'_>, list: Vec<Template>, hint: &str, live: bool) {
+    ui.label(RichText::new(hint).color(theme::MUTED).small());
     ui.add_space(8.0);
     let search = ctx.state.search.to_lowercase();
     egui::ScrollArea::vertical()
@@ -30,11 +47,11 @@ pub fn show(ui: &mut egui::Ui, ctx: &mut Ctx<'_>) {
         .show(ui, |ui| {
             ui.horizontal_wrapped(|ui| {
                 ui.spacing_mut().item_spacing = vec2(10.0, 10.0);
-                for t in templates()
+                for t in list
                     .into_iter()
                     .filter(|t| search.is_empty() || t.name.to_lowercase().contains(&search))
                 {
-                    if tile(ui, ctx, &t).clicked() {
+                    if tile(ui, ctx, &t, live).clicked() {
                         add(ctx, &t);
                     }
                 }
@@ -64,12 +81,21 @@ pub fn add(ctx: &mut Ctx<'_>, template: &Template) {
     }
 }
 
-fn tile(ui: &mut egui::Ui, ctx: &mut Ctx<'_>, template: &Template) -> egui::Response {
+fn tile(ui: &mut egui::Ui, ctx: &mut Ctx<'_>, template: &Template, live: bool) -> egui::Response {
     let (rect, resp) = ui.allocate_exact_size(vec2(TILE_W, TILE_H + 20.0), Sense::click());
     let card = egui::Rect::from_min_size(rect.min, vec2(TILE_W, TILE_H));
     let painter = ui.painter();
     painter.rect_filled(card, CornerRadius::same(8), Color32::from_rgb(30, 30, 30));
-    if let Some(texture) = picture(ui.ctx(), ctx, template) {
+    let playing = live && resp.hovered();
+    if playing {
+        ui.ctx().request_repaint();
+    }
+    let texture = if playing {
+        playing_picture(ui.ctx(), template)
+    } else {
+        picture(ui.ctx(), ctx, template)
+    };
+    if let Some(texture) = texture {
         painter.image(
             texture.id(),
             card.shrink(3.0),
@@ -120,4 +146,27 @@ fn picture(
     let texture = egui_ctx.load_texture(key.clone(), image, egui::TextureOptions::LINEAR);
     ctx.state.preset_tiles.insert(key, texture.clone());
     Some(texture)
+}
+
+/// The template as it looks right now while the mouse is on its tile: it plays from the start, again and again.
+fn playing_picture(egui_ctx: &egui::Context, template: &Template) -> Option<egui::TextureHandle> {
+    let seconds = egui_ctx.input(|i| i.time);
+    let length = template.duration as f64 / 1e6;
+    // a little pause at the end of each round so the finished text can be read
+    let at = (((seconds % (length + 0.8)).min(length)) * 1e6) as i64;
+    let mut project = Project::new("tile");
+    project.background = Background::Color([52, 66, 96, 255]);
+    let mut doc = Document::new(project);
+    doc.add_group(template.build(1920, 1080), 0, "tile").ok()?;
+    let (w, h) = (TILE_W as u32 * 2, TILE_H as u32 * 2);
+    let frame = RENDERER.with(|r| r.borrow_mut().render(&doc.project, at, (w, h)));
+    let image = egui::ColorImage::from_rgba_unmultiplied(
+        [frame.width as usize, frame.height as usize],
+        &frame.rgba,
+    );
+    Some(egui_ctx.load_texture(
+        format!("playing:{}", template.id),
+        image,
+        egui::TextureOptions::LINEAR,
+    ))
 }

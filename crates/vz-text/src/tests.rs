@@ -446,3 +446,124 @@ fn show_which_font_draws_each_letter() {
         }
     }
 }
+
+fn typing(text_s: &str) -> TextContent {
+    let mut t = styled(text_s, |s| s.size = 80.0);
+    t.caret = true;
+    t.animators = vec![vz_core::TextAnimator {
+        dy: 0.0,
+        delay: 0.2,
+        duration: 0.01,
+        easing: vz_anim::Easing::Linear,
+        ..vz_core::TextAnimator::default()
+    }];
+    t
+}
+
+#[test]
+fn the_typing_cursor_follows_the_letters_and_then_blinks() {
+    let mut e = TextEngine::new();
+    let t = typing("ABCDE");
+    let secs = |s: f32| (s * 1_000_000.0) as i64;
+    let total = secs(5.0);
+    // nothing typed yet: only the cursor is there, on the left
+    let start = e.render_at(&t, 1.0, 0, total);
+    assert!(
+        alpha_sum(&start) > 0,
+        "the cursor shows before the first letter"
+    );
+    let two = e.render_at(&t, 1.0, secs(0.25), total);
+    let four = e.render_at(&t, 1.0, secs(0.65), total);
+    let (_, _, right_two, _) = bounds(&two);
+    let (_, _, right_four, _) = bounds(&four);
+    assert!(
+        right_four > right_two,
+        "more letters, the cursor is further right"
+    );
+    // all letters are there: the cursor blinks (on in the first half of every half... second, off in the next)
+    let on = e.render_at(&t, 1.0, secs(2.1), total);
+    let off = e.render_at(&t, 1.0, secs(2.6), total);
+    assert!(alpha_sum(&on) > alpha_sum(&off), "cursor on, then off");
+    // without the cursor switched on nothing changes
+    let mut plain = t.clone();
+    plain.caret = false;
+    let no_caret = e.render_at(&plain, 1.0, secs(2.1), total);
+    assert_eq!(alpha_sum(&no_caret), alpha_sum(&off));
+}
+
+#[test]
+fn a_reflection_adds_a_fading_upside_down_copy_below() {
+    let mut e = TextEngine::new();
+    let plain = e.render(&styled("MIRROR", |s| s.size = 100.0), 1.0);
+    let mut t = styled("MIRROR", |s| s.size = 100.0);
+    t.reflection = Some(vz_core::Reflection::default());
+    let with = e.render(&t, 1.0);
+    assert!(
+        with.height > plain.height + 40,
+        "{} vs {}",
+        with.height,
+        plain.height
+    );
+    assert_eq!(with.width, plain.width);
+    // the copy sits in the lower part and is dimmer than the letters
+    let row_alpha = |img: &TextImage, y: u32| -> u32 {
+        (0..img.width)
+            .map(|x| u32::from(img.rgba[((y * img.width + x) * 4 + 3) as usize]))
+            .max()
+            .unwrap_or(0)
+    };
+    let h = with.height;
+    let strongest_below = (h * 2 / 3..h).map(|y| row_alpha(&with, y)).max().unwrap();
+    assert!(
+        strongest_below > 30,
+        "reflection is visible: {strongest_below}"
+    );
+    assert!(
+        strongest_below < 200,
+        "reflection is dimmer than the letters: {strongest_below}"
+    );
+    // the picture stays centred on the letters: the same room above and below
+    let (_, top, _, bottom) = bounds(&with);
+    assert!(top > 10 && h - bottom > 5);
+}
+
+#[test]
+fn spread_moves_letters_outwards_and_flicker_is_the_same_every_time() {
+    use vz_core::{TextAnimator, TextPhase};
+    let an = TextAnimator {
+        spread: 10.0,
+        dy: 0.0,
+        opacity: 1.0,
+        delay: 0.0,
+        duration: 1.0,
+        ..TextAnimator::default()
+    };
+    let first = animate::state(&an, 0, 5, 0, 5_000_000);
+    let last = animate::state(&an, 4, 5, 0, 5_000_000);
+    let middle = animate::state(&an, 2, 5, 0, 5_000_000);
+    assert_eq!((first.dx, last.dx, middle.dx), (-20.0, 20.0, 0.0));
+    // the animation over: letters are home again
+    assert_eq!(animate::state(&an, 0, 5, 2_000_000, 5_000_000).dx, 0.0);
+
+    let flicker = TextAnimator {
+        phase: TextPhase::Loop,
+        flicker: true,
+        dy: 0.0,
+        opacity: 0.2,
+        duration: 1.0,
+        ..TextAnimator::default()
+    };
+    let samples: Vec<f32> = (0..120)
+        .map(|i| animate::state(&flicker, 0, 1, i * 50_000, 6_000_000).opacity)
+        .collect();
+    let again: Vec<f32> = (0..120)
+        .map(|i| animate::state(&flicker, 0, 1, i * 50_000, 6_000_000).opacity)
+        .collect();
+    assert_eq!(samples, again);
+    let dips = samples.iter().filter(|o| **o < 0.99).count();
+    assert!(
+        dips > 5 && dips < 70,
+        "it dips now and then, not always: {dips}/120"
+    );
+    assert!(samples.iter().all(|o| (0.2..=1.0).contains(o)));
+}

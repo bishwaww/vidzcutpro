@@ -13,6 +13,7 @@ pub mod effects;
 pub mod filters;
 pub mod speed;
 pub mod templates;
+pub mod text_animations;
 pub mod transition;
 
 /// Name of this crate, used in diagnostics.

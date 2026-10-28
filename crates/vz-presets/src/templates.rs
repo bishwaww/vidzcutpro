@@ -22,6 +22,20 @@ pub struct Template {
 }
 
 impl Template {
+    pub(crate) fn new(
+        id: &'static str,
+        name: &'static str,
+        duration: Micros,
+        build: fn(&Canvas) -> Vec<(TrackKind, Clip)>,
+    ) -> Self {
+        Self {
+            id,
+            name,
+            duration,
+            build,
+        }
+    }
+
     /// The layers of this template for a canvas of `width` by `height` pixels (bottom layer first; starts are relative
     /// to where the template is placed).
     pub fn build(&self, width: u32, height: u32) -> Vec<(TrackKind, Clip)> {
@@ -34,21 +48,21 @@ impl Template {
 }
 
 /// The canvas a template is built for, with helpers to place things by share of its size.
-struct Canvas {
-    w: f32,
-    h: f32,
-    len: Micros,
+pub(crate) struct Canvas {
+    pub(crate) w: f32,
+    pub(crate) h: f32,
+    pub(crate) len: Micros,
 }
 
 impl Canvas {
     /// Put a clip `fx` and `fy` of the canvas width and height away from the middle.
-    fn at(&self, mut clip: Clip, fx: f32, fy: f32) -> Clip {
+    pub(crate) fn at(&self, mut clip: Clip, fx: f32, fy: f32) -> Clip {
         clip.transform.x = (fx * self.w).into();
         clip.transform.y = (fy * self.h).into();
         clip
     }
 
-    fn text(
+    pub(crate) fn text(
         &self,
         text: &str,
         f: impl FnOnce(&mut TextContent),
@@ -108,7 +122,7 @@ fn anim(preset: &str, seconds: f32) -> Option<AnimRef> {
 }
 
 /// Give a clip its animations: in, out and one that plays all the time.
-fn animated(
+pub(crate) fn animated(
     mut c: Clip,
     i: Option<(&str, f32)>,
     o: Option<(&str, f32)>,
@@ -120,7 +134,7 @@ fn animated(
     c
 }
 
-fn stroke(color: Color, width: f32) -> Option<TextStroke> {
+pub(crate) fn stroke(color: Color, width: f32) -> Option<TextStroke> {
     Some(TextStroke { color, width })
 }
 

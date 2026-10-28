@@ -62,6 +62,7 @@ fn fade_in_out() -> Vec<TextAnimator> {
         delay: 0.0,
         duration: 0.25,
         easing: Easing::Linear,
+        ..TextAnimator::default()
     };
     vec![mk(TextPhase::In), mk(TextPhase::Out)]
 }

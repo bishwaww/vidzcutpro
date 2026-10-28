@@ -25,8 +25,8 @@ pub use audio_fx::{
 };
 pub use command::{Command, History, MergeKey, TrackFlags};
 pub use content::{
-    Content, LineCap, LineJoin, PenNode, PenPath, ShapeContent, ShapeKind, StrokePlace, StyleSpan,
-    TextAlign, TextAnimator, TextBackground, TextCase, TextContent, TextGlow, TextPhase,
+    Content, LineCap, LineJoin, PenNode, PenPath, Reflection, ShapeContent, ShapeKind, StrokePlace,
+    StyleSpan, TextAlign, TextAnimator, TextBackground, TextCase, TextContent, TextGlow, TextPhase,
     TextShadow, TextStroke, TextStyle, TextUnit, WordMode,
 };
 pub use document::{

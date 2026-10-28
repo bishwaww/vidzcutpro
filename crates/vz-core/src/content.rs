@@ -161,6 +161,13 @@ pub struct TextAnimator {
     pub delay: f32,
     pub duration: f32,
     pub easing: Easing,
+    /// Spreads the units apart: each unit is also moved sideways by this many reference pixels for every place it is
+    /// away from the middle of the text (at the away look). Letters that close in on each other look cinematic.
+    #[serde(default)]
+    pub spread: f32,
+    /// For a looping animator: instead of a smooth wave, units dip at random moments, like a neon sign that is not quite right.
+    #[serde(default)]
+    pub flicker: bool,
 }
 
 impl Default for TextAnimator {
@@ -176,6 +183,8 @@ impl Default for TextAnimator {
             delay: 0.06,
             duration: 0.4,
             easing: Easing::EaseOut,
+            spread: 0.0,
+            flicker: false,
         }
     }
 }
@@ -263,6 +272,33 @@ pub struct TextContent {
     /// When each word starts, in microseconds from the start of the clip. Empty: spread over the clip by word length.
     #[serde(default)]
     pub word_times: Vec<Micros>,
+    /// A typing cursor after the last letter that has appeared (it blinks once everything is typed).
+    #[serde(default)]
+    pub caret: bool,
+    /// A fading, upside-down copy under the text, like a reflection in water or glass.
+    #[serde(default)]
+    pub reflection: Option<Reflection>,
+}
+
+/// The reflection under a text.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Reflection {
+    /// Space between the text and its reflection (reference pixels).
+    pub gap: f32,
+    /// How much of the text's height is mirrored, 0.1 to 1.
+    pub length: f32,
+    /// How strong the reflection is where it starts, 0 to 1. It fades to nothing.
+    pub opacity: f32,
+}
+
+impl Default for Reflection {
+    fn default() -> Self {
+        Self {
+            gap: 2.0,
+            length: 0.6,
+            opacity: 0.55,
+        }
+    }
 }
 
 impl TextContent {

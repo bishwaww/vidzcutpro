@@ -77,12 +77,30 @@ pub fn state(
             let p = ((t - begins - index as f32 * an.delay) / dur).clamp(0.0, 1.0);
             an.easing.apply(p)
         }
+        TextPhase::Loop if an.flicker => {
+            // twelve steps per cycle; now and then a step dips, by a random amount
+            let step = (t / dur * 12.0).floor() as i64;
+            let n = noise(step.wrapping_mul(31).wrapping_add(index as i64 * 7919) as u32);
+            if n > 0.78 { (n - 0.78) / 0.22 } else { 0.0 }
+        }
         TextPhase::Loop => {
             let phase = t / dur - index as f32 * an.delay / dur;
             0.5 - 0.5 * (std::f32::consts::TAU * phase).cos()
         }
     };
-    UnitState::away(an, amount)
+    let mut st = UnitState::away(an, amount);
+    // units spread out from the middle of the text (and close in again as `amount` falls to 0)
+    st.dx += an.spread * (index as f32 - (count as f32 - 1.0) / 2.0) * amount;
+    st
+}
+
+/// The same number every time for the same input, between 0 and 1 (so playback and export agree).
+fn noise(n: u32) -> f32 {
+    let mut x = n.wrapping_mul(0x9E37_79B1);
+    x ^= x >> 15;
+    x = x.wrapping_mul(0x85EB_CA6B);
+    x ^= x >> 13;
+    (x & 0xFFFF) as f32 / 65_535.0
 }
 
 /// All animators together for one unit. `indices` and `counts` give the unit's place for each kind of unit

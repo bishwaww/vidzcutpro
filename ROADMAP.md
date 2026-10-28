@@ -98,6 +98,11 @@ Legend: `[x]` done · `[ ]` to do · `[-]` skipped on purpose (reason given)
 - [ ] Not done in 7e: macOS installer (needs a Mac and an LGPL FFmpeg for macOS), code signing (needs a certificate), file association for `.vzp` (the program does not open a file given on the command line yet), Sinhala interface text file, accent colour choice (both need every interface string / colour moved out of the code first: moved to a later phase)
 - [ ] Not yet in 7a-7c: ProRes export (needs macOS), in / out points for export, saving export settings between sessions, templates with pictures or video, rename a template
 
+## Text animations (added 2026-10-28, after Phase 7)
+- [x] 10 ready-made animated texts (Text → Text animations): typewriter + blinking cursor, 3 neon signs with flicker, mirror reflection, cinematic spread, cinematic blur, words rise, video-in-text, outline pop. Hover-play tiles.
+- [x] New engine features: typing cursor, reflection, per-letter spread, flicker loop (all optional, old projects unchanged) + inspector controls.
+- [ ] Not made: Draw Text, Font Change, text behind a person (AI), hollow outline text.
+
 ## Phase 8 — Motion graphics extras
 - [ ] Graph editor, motion paths on canvas, parenting/null layers
 - [ ] Motion blur, wiggle, animation-preset saving

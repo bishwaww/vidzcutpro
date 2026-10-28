@@ -834,3 +834,5 @@ mod tests_captions;
 mod tests_compound;
 #[cfg(test)]
 mod tests_layers;
+#[cfg(test)]
+mod tests_text_animations;

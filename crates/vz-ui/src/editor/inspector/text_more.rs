@@ -64,6 +64,8 @@ pub fn more_sections(ui: &mut egui::Ui, ctx: &mut Ctx<'_>, clip: &Clip) {
     strokes_section(ui, ctx, id, content);
     glow_section(ui, ctx, id, content);
     ui.add_space(6.0);
+    caret_and_mirror_section(ui, ctx, id, content);
+    ui.add_space(6.0);
     words_section(ui, ctx, id, content);
     ui.add_space(6.0);
     animators_section(ui, ctx, id, content);
@@ -480,6 +482,90 @@ fn glow_section(ui: &mut egui::Ui, ctx: &mut Ctx<'_>, id: ClipId, content: &vz_c
         });
 }
 
+// ---- typing cursor and reflection ---------------------------------------------------------------------------------------
+
+fn caret_and_mirror_section(
+    ui: &mut egui::Ui,
+    ctx: &mut Ctx<'_>,
+    id: ClipId,
+    content: &vz_core::TextContent,
+) {
+    let mut caret = content.caret;
+    if ui
+        .checkbox(&mut caret, RichText::new("Typing cursor").strong())
+        .on_hover_text("A blinking bar after the last letter that has appeared (best with a letter-by-letter animation)")
+        .changed()
+    {
+        change(ctx, id, "Typing cursor", move |c| {
+            with_text(c, |t| t.caret = caret)
+        });
+    }
+    let mut on = content.reflection.is_some();
+    if ui
+        .checkbox(&mut on, RichText::new("Reflection").strong())
+        .on_hover_text("A faded mirror picture under the text")
+        .changed()
+    {
+        change(ctx, id, "Reflection", move |c| {
+            with_text(c, |t| t.reflection = on.then(vz_core::Reflection::default))
+        });
+    }
+    let Some(r) = content.reflection else {
+        return;
+    };
+    egui::Grid::new("text_reflection")
+        .num_columns(2)
+        .spacing(vec2(14.0, 6.0))
+        .min_col_width(80.0)
+        .show(ui, |ui| {
+            num(
+                ui,
+                ctx,
+                id,
+                "reflection.length",
+                "Length",
+                r.length * 100.0,
+                10.0..=100.0,
+                " %",
+                |t, v| {
+                    if let Some(r) = &mut t.reflection {
+                        r.length = v / 100.0;
+                    }
+                },
+            );
+            num(
+                ui,
+                ctx,
+                id,
+                "reflection.opacity",
+                "Strength",
+                r.opacity * 100.0,
+                0.0..=100.0,
+                " %",
+                |t, v| {
+                    if let Some(r) = &mut t.reflection {
+                        r.opacity = v / 100.0;
+                    }
+                },
+            );
+            num(
+                ui,
+                ctx,
+                id,
+                "reflection.gap",
+                "Gap",
+                r.gap,
+                0.0..=60.0,
+                " px",
+                |t, v| {
+                    if let Some(r) = &mut t.reflection {
+                        r.gap = v;
+                    }
+                },
+            );
+        });
+}
+
 // ---- caption word effects -----------------------------------------------------------------------------------------------
 
 fn mode_name(m: &WordMode) -> &'static str {
@@ -868,6 +954,30 @@ fn animators_section(
                             " %",
                             move |t, v| t.animators[i].opacity = v / 100.0,
                         );
+                        num(
+                            ui,
+                            ctx,
+                            id,
+                            &m("spread"),
+                            "Spread",
+                            an.spread,
+                            -100.0..=100.0,
+                            " px",
+                            move |t, v| t.animators[i].spread = v,
+                        );
+                        if an.phase == TextPhase::Loop {
+                            row(ui, "Flicker", |ui| {
+                                let mut flicker = an.flicker;
+                                if ui
+                                    .checkbox(&mut flicker, "Random dips (like a neon sign)")
+                                    .changed()
+                                {
+                                    change(ctx, id, "Animator", move |c| {
+                                        with_text(c, |t| t.animators[i].flicker = flicker)
+                                    });
+                                }
+                            });
+                        }
                         num(
                             ui,
                             ctx,

@@ -74,7 +74,13 @@ impl Category {
         match self {
             Self::Media => &["Local", "Library", "Subprojects"],
             Self::Audio => &["Music", "Sound effects", "Extract audio", "Voiceover"],
-            Self::Text => &["Add text", "Text styles", "Text templates", "Fonts"],
+            Self::Text => &[
+                "Add text",
+                "Text styles",
+                "Text templates",
+                "Text animations",
+                "Fonts",
+            ],
             Self::Stickers => &["Stickers", "Shapes"],
             Self::Effects => &[
                 "Basic",

@@ -385,7 +385,7 @@ impl TextEngine {
         let timed = text.words != vz_core::WordMode::Off || !text.animators.is_empty();
         let effective = rich::effective(text, local, duration);
         let mut key = Self::key(&effective, factor);
-        if !text.animators.is_empty() {
+        if !text.animators.is_empty() || text.caret {
             key.push_str(&format!("|{local}|{duration}"));
         }
         let _ = timed;
@@ -602,6 +602,17 @@ impl TextEngine {
                 }
             }
         }
+        if text.caret
+            && let Some((x0, y0, x1, y1)) = caret_bar(&pixels, text, factor, local, duration)
+        {
+            let rgb = [style.color[0], style.color[1], style.color[2]];
+            for y in y0.max(0)..y1.min(h as i32) {
+                for x in x0.max(0)..x1.min(w as i32) {
+                    letters.add(x, y, 1.0);
+                    colors[y as usize * w + x as usize] = rgb;
+                }
+            }
+        }
         if let Some(g) = &style.gradient {
             let (bx, by) = (margin, margin);
             for y in 0..h {
@@ -664,6 +675,36 @@ impl TextEngine {
             (out_w, out_h) = (bent.w, bent.h);
             px = bent.px;
         }
+        if let Some(r) = text.reflection {
+            // a fading, upside-down copy under the box; room is added above as well so the picture stays centred
+            let gap = (r.gap * factor).round().max(0.0) as usize;
+            let rows = ((r.length.clamp(0.1, 1.0) * content.1).round() as usize).max(1);
+            let extra = gap + rows;
+            let bottom = (((out_h as f32 + content.1) / 2.0).round() as usize).min(out_h);
+            let new_h = out_h + 2 * extra;
+            let mut bigger = vec![[0.0f32; 4]; out_w * new_h];
+            for y in 0..out_h {
+                bigger[(y + extra) * out_w..(y + extra + 1) * out_w]
+                    .copy_from_slice(&px[y * out_w..(y + 1) * out_w]);
+            }
+            for i in 0..rows.min(bottom) {
+                let from = bottom - 1 - i;
+                let to = extra + bottom + gap + i;
+                if to >= new_h {
+                    break;
+                }
+                let fade = r.opacity.clamp(0.0, 1.0) * (1.0 - i as f32 / rows as f32).powf(1.4);
+                for x in 0..out_w {
+                    let s = px[from * out_w + x];
+                    let d = &mut bigger[to * out_w + x];
+                    for c in 0..4 {
+                        d[c] += s[c] * fade;
+                    }
+                }
+            }
+            px = bigger;
+            out_h = new_h;
+        }
         TextImage {
             width: out_w as u32,
             height: out_h as u32,
@@ -704,26 +745,7 @@ fn place_animated(
             None => groups.push((id, vec![p])),
         }
     }
-    let counts = [
-        pixels
-            .iter()
-            .map(|p| p.unit[0])
-            .filter(|u| *u != usize::MAX)
-            .max()
-            .map_or(1, |m| m + 1),
-        pixels
-            .iter()
-            .map(|p| p.unit[1])
-            .filter(|u| *u != usize::MAX)
-            .max()
-            .map_or(1, |m| m + 1),
-        pixels
-            .iter()
-            .map(|p| p.unit[2])
-            .filter(|u| *u != usize::MAX)
-            .max()
-            .map_or(1, |m| m + 1),
-    ];
+    let counts = unit_counts(pixels);
     for (_, group) in &groups {
         let first = group[0];
         let st = if first.unit[0] == usize::MAX {
@@ -803,6 +825,79 @@ fn place_animated(
     }
 }
 
+/// How many letter groups, words and lines the pixels belong to.
+fn unit_counts(pixels: &[Pix]) -> [usize; 3] {
+    let count = |k: usize| {
+        pixels
+            .iter()
+            .map(|p| p.unit[k])
+            .filter(|u| *u != usize::MAX)
+            .max()
+            .map_or(1, |m| m + 1)
+    };
+    [count(0), count(1), count(2)]
+}
+
+/// Where the typing cursor goes: (left, top, right, bottom) in picture pixels, or `None` while it is blinked off.
+/// It stands after the last letter that has appeared (before the first one when nothing has), and blinks twice a
+/// second once all the letters are there.
+fn caret_bar(
+    pixels: &[Pix],
+    text: &TextContent,
+    factor: f32,
+    local: Micros,
+    duration: Micros,
+) -> Option<(i32, i32, i32, i32)> {
+    let real: Vec<&Pix> = pixels.iter().filter(|p| p.unit[0] != usize::MAX).collect();
+    if real.is_empty() {
+        return None;
+    }
+    let finest = text
+        .animators
+        .iter()
+        .map(|a| match a.unit {
+            TextUnit::Character => 0,
+            TextUnit::Word => 1,
+            TextUnit::Line => 2,
+        })
+        .min()
+        .unwrap_or(0);
+    let counts = unit_counts(pixels);
+    // the units in reading order: id -> (first pixel, left, right)
+    let mut units: std::collections::BTreeMap<usize, (&Pix, i32, i32)> =
+        std::collections::BTreeMap::new();
+    for p in &real {
+        let e = units.entry(p.unit[finest]).or_insert((p, p.x, p.x));
+        e.1 = e.1.min(p.x);
+        e.2 = e.2.max(p.x);
+    }
+    let visible = |first: &Pix| {
+        text.animators.is_empty()
+            || animate::combined(&text.animators, first.unit, counts, local, duration).opacity
+                >= 0.5
+    };
+    let shown: Vec<(&usize, &(&Pix, i32, i32))> =
+        units.iter().filter(|(_, u)| visible(u.0)).collect();
+    let all_there = shown.len() == units.len();
+    let size = text.style.size * factor;
+    let gap = (size * 0.06).max(2.0).round() as i32;
+    let width = (size * 0.06).max(2.0).round() as i32;
+    let (line, x) = match shown.last() {
+        Some((_, u)) => (u.0.unit[2], u.2 + 1 + gap),
+        None => {
+            let (_, first) = units.iter().next()?;
+            (first.0.unit[2], first.1 - gap - width)
+        }
+    };
+    if all_there && ((local as f32 / 1_000_000.0) * 2.0).floor() as i64 % 2 != 0 {
+        return None;
+    }
+    let (top, bottom) = real
+        .iter()
+        .filter(|p| p.unit[2] == line)
+        .fold((i32::MAX, i32::MIN), |(a, b), p| (a.min(p.y), b.max(p.y)));
+    Some((x, top, x + width, bottom + 1))
+}
 /// Space between the letters and the edge of the background box, in canvas pixels.
 fn padding(text: &TextContent, factor: f32) -> f32 {
     text.style.background.map_or(0.0, |b| b.padding * factor)

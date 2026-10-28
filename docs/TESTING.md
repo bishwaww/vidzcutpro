@@ -289,3 +289,19 @@ The installer is `D:\Projects\vidzcutpro\dist\vidzcut_0.1.0_x64-setup.exe` (made
 2. **The whole interface is in Roboto** (and Roboto Mono for the time numbers). Sinhala and Tamil text in the interface still show correctly.
 3. **Old-style Sinhala fonts** (FM Abhaya, 4u-Nilakshi, DL / CPS / ... fonts that put Sinhala letters on the English keys): add a text, choose the font in **Font**, type with the English keys (for example `dsdgrg`): the Sinhala letters of that font must show in the player. (Cause found: these fonts declare a wrong "weight" number, so vidzcut ignored them and used another font. Fixed.) **Tell me if any old-style font still shows English letters.**
 4. **Stickers → Shapes** looks like CapCut: outline icons on dark tiles (rectangle, circle, triangle, parallelogram, trapezoid, line, arrow) and the **pen tool** as the last tile. Our other shapes (diamond, star, heart, speech bubble ...) are under **More shapes**.
+
+## Text animations (2026-10-28) — what to check
+
+Open **Text → Text animations**. Move the mouse over a tile: it plays. Click one: it is added at the playhead (all its parts are grouped; change the words in the **Text** tab on the right).
+
+1. **Typewriter** – letters appear one after another with a blinking bar after the last one.
+2. **Neon sign / Neon pink / Neon cyan** – letters switch on one by one, glow, and now and then one flickers.
+3. **Mirror** – the word fades in with a faded upside-down copy under it.
+4. **Cinematic spread** – wide-spaced letters drift together; it ends in a blur. **Cinematic blur** – soft glowing lower-case text that comes out of a blur.
+5. **Words rise** – words come up one by one (a calm, clean title).
+6. **Video in text** – put it **above a video** on the timeline: the video shows only inside the letters, the rest is black. (Type your own word in the Text tab; short, fat words look best.)
+7. **Outline pop** – thick outlined words pop in one by one.
+8. Select one of the texts. In **Text** on the right you now have **Typing cursor**, **Reflection** (length / strength / gap), and in each animator **Spread** and (for Loop animators) **Flicker**. Try them on a normal text too, including Sinhala ("ශ්‍රී ලංකාව").
+9. Press play and export a few seconds: the exported file must look the same as the player.
+
+Not made (and why): Draw Text (letters drawn as a pen line), Font Change, text behind a person (needs AI, not in this version), and true hollow outline text.
