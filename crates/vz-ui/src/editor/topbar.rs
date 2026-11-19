@@ -50,6 +50,10 @@ pub fn show(ui: &mut egui::Ui, ctx: &mut Ctx<'_>) {
                     ctx.actions.push(Action::OpenDialog);
                     ui.close();
                 }
+                if ui.button("Open CapCut project…").clicked() {
+                    ctx.actions.push(Action::ImportCapCut);
+                    ui.close();
+                }
                 if ui
                     .add(egui::Button::new("Save").shortcut_text("Ctrl+S"))
                     .clicked()

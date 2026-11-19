@@ -1,0 +1,19 @@
+[package]
+name = "vz-import"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+vz-core = { path = "../vz-core" }
+vz-anim = { path = "../vz-anim" }
+vz-media = { path = "../vz-media" }
+vz-text = { path = "../vz-text" }
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+vz-render = { path = "../vz-render" }
+image = { workspace = true }

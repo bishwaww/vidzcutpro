@@ -47,6 +47,10 @@ enum Dialog {
         plain: String,
         details: String,
     },
+    /// Choosing a CapCut project to open.
+    CapCut(Box<crate::capcut_dialog::CapCutDialog>),
+    /// What an import from another editor left out.
+    ImportReport(Vec<String>),
 }
 
 pub struct VidzApp {
@@ -638,6 +642,7 @@ impl VidzApp {
             Action::Save => self.save(false),
             Action::SaveAs => self.save(true),
             Action::OpenDialog => self.open_dialog(),
+            Action::ImportCapCut => self.open_capcut_list(),
             Action::TogglePlay => self.toggle_play(),
             Action::Export => {
                 if self.doc.project.duration() == 0 {
@@ -693,6 +698,38 @@ impl VidzApp {
     }
 
     /// Show an error window: what happened in plain words, and details that can be copied.
+    fn open_capcut_list(&mut self) {
+        self.dialog = Some(Dialog::CapCut(Box::new(
+            crate::capcut_dialog::CapCutDialog::new(),
+        )));
+    }
+
+    /// The CapCut list: while it is open it reads a project in the background; when that is done the project opens.
+    fn show_capcut(&mut self, ctx: &egui::Context) {
+        use crate::capcut_dialog::Outcome;
+        let Some(Dialog::CapCut(list)) = &mut self.dialog else {
+            return;
+        };
+        match list.show(ctx) {
+            Outcome::None => {}
+            Outcome::Close => self.dialog = None,
+            Outcome::Imported(imported) => {
+                let imported = *imported;
+                self.dialog = None;
+                self.pause();
+                self.set_document(Document::new(imported.project));
+                self.editor
+                    .say("Opened from CapCut. Save it to keep it as a vidzcut project.");
+                if !imported.notes.is_empty() {
+                    self.dialog = Some(Dialog::ImportReport(imported.notes));
+                }
+            }
+            Outcome::Failed(plain, details) => {
+                self.problem("The CapCut project could not be opened", &plain, &details);
+            }
+        }
+    }
+
     fn problem(&mut self, title: &str, plain: &str, details: &str) {
         tracing::error!("{title}: {details}");
         self.dialog = Some(Dialog::Problem {
@@ -704,6 +741,10 @@ impl VidzApp {
     // ---- dialogs ----------------------------------------------------------------------------------------------------
 
     fn show_dialog(&mut self, ctx: &egui::Context) {
+        if matches!(self.dialog, Some(Dialog::CapCut(_))) {
+            self.show_capcut(ctx);
+            return;
+        }
         let Some(dialog) = &self.dialog else { return };
         let mut choice = None;
         match dialog {
@@ -786,6 +827,33 @@ impl VidzApp {
                                 crate::export_dialog::open_folder(&dir);
                             }
                         });
+                    });
+                if close {
+                    self.dialog = None;
+                }
+            }
+            Dialog::CapCut(_) => {}
+            Dialog::ImportReport(notes) => {
+                let notes = notes.clone();
+                let mut close = false;
+                egui::Window::new("Opened from CapCut")
+                    .collapsible(false)
+                    .resizable(false)
+                    .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+                    .max_width(480.0)
+                    .show(ctx, |ui| {
+                        ui.label(
+                            "Your CapCut project is open as a new vidzcut project. Things to know:",
+                        );
+                        ui.add_space(6.0);
+                        for note in &notes {
+                            ui.label(format!("•  {note}"));
+                            ui.add_space(2.0);
+                        }
+                        ui.add_space(8.0);
+                        if ui.add(theme::primary_button("OK")).clicked() {
+                            close = true;
+                        }
                     });
                 if close {
                     self.dialog = None;
@@ -973,6 +1041,7 @@ impl eframe::App for VidzApp {
                     home::Action::OpenSample => self.open_sample(),
                     home::Action::OpenSettings => self.editor.settings_ui.open = true,
                     home::Action::OpenDialog => self.open_dialog(),
+                    home::Action::ImportCapCut => self.open_capcut_list(),
                     home::Action::Open(path) => self.open_path(&path),
                     home::Action::RemoveRecent(path) => {
                         self.settings.recent.retain(|p| *p != path);

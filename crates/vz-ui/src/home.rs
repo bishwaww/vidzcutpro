@@ -26,6 +26,8 @@ pub enum Action {
     OpenSample,
     OpenSettings,
     OpenDialog,
+    /// Open the list of CapCut projects.
+    ImportCapCut,
     Open(PathBuf),
     RemoveRecent(PathBuf),
 }
@@ -183,6 +185,18 @@ pub fn show(ui: &mut egui::Ui, logo: &egui::TextureHandle, recent: &[RecentItem]
                             if ui.button(label).clicked() {
                                 action = Action::CreateWithAspect(preset);
                             }
+                        }
+                    });
+
+                    ui.add_space(8.0);
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("Bring in work:").color(theme::MUTED));
+                        if ui
+                            .button("Open a CapCut project…")
+                            .on_hover_text("Edit in CapCut, then add Sinhala fonts and caption animations here")
+                            .clicked()
+                        {
+                            action = Action::ImportCapCut;
                         }
                     });
 

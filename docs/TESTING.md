@@ -305,3 +305,13 @@ Open **Text → Text animations**. Move the mouse over a tile: it plays. Click o
 9. Press play and export a few seconds: the exported file must look the same as the player.
 
 Not made (and why): Draw Text (letters drawn as a pen line), Font Change, text behind a person (needs AI, not in this version), and true hollow outline text.
+
+## Open a CapCut project (2026-11-20) — what to check
+
+1. On the home screen click **Open a CapCut project…** (or, inside the editor: **Menu → File → Open CapCut project…**). A list of your CapCut projects appears, newest first. Use the search box to find one. (**Choose a folder…** lets you pick a project folder yourself.)
+2. Click a project. It says "Reading…" for a moment, then opens as a new vidzcut project (not saved yet: use Save). A window lists what could not come along.
+3. Compare with CapCut: same cuts, same order, same picture position and size, same texts and colours, same sound. Play it, scrub it.
+4. **Sinhala fonts**: texts typed in an old-style font (4u-Basuru, FM Abhaya ...) must show the Sinhala letters. Click such a text and, in the Text tab, change the font or the animation (Text → Text animations, caption styles) — that is the point of this feature.
+5. Captions made in CapCut arrive on a caption track: open the Captions tab and apply one of the 21 caption styles.
+6. Your CapCut project is only read. Open it in CapCut afterwards: it must be exactly as before.
+7. Tell me what looks different from CapCut. Known: CapCut's effects, filters, transitions, animations and keyframes are not imported (the window says how many); CapCut fonts that are not installed on this PC (for example Poppins) are replaced by another font.

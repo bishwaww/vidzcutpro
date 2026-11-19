@@ -15,6 +15,7 @@ vz-export = { path = "../vz-export" }
 vz-text = { path = "../vz-text" }
 vz-vector = { path = "../vz-vector" }
 vz-presets = { path = "../vz-presets" }
+vz-import = { path = "../vz-import" }
 eframe.workspace = true
 image.workspace = true
 serde.workspace = true

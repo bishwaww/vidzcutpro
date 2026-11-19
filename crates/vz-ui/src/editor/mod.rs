@@ -202,6 +202,8 @@ pub enum Action {
     Save,
     SaveAs,
     OpenDialog,
+    /// Open the list of CapCut projects.
+    ImportCapCut,
     TogglePlay,
     Export,
     /// Open the Export window on the "Picture" page (save the picture at the playhead).

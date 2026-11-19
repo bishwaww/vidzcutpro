@@ -4067,6 +4067,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "vz-import"
+version = "0.1.0"
+dependencies = [
+ "image",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tracing",
+ "vz-anim",
+ "vz-core",
+ "vz-media",
+ "vz-render",
+ "vz-text",
+]
+
+[[package]]
 name = "vz-media"
 version = "0.1.0"
 dependencies = [
@@ -4131,6 +4146,7 @@ dependencies = [
  "vz-audio",
  "vz-core",
  "vz-export",
+ "vz-import",
  "vz-media",
  "vz-presets",
  "vz-render",

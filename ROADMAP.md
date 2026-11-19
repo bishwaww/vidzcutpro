@@ -103,6 +103,12 @@ Legend: `[x]` done · `[ ]` to do · `[-]` skipped on purpose (reason given)
 - [x] New engine features: typing cursor, reflection, per-letter spread, flicker loop (all optional, old projects unchanged) + inspector controls.
 - [ ] Not made: Draw Text, Font Change, text behind a person (AI), hollow outline text.
 
+
+## CapCut import (added 2026-11-20, after Phase 7)
+- [x] Open a CapCut project in vidzcut (home screen button, Menu → File): cuts, trims, speed, volume, position / size / turn / opacity, photos and videos, sound, compound clips, rectangles, masks, texts with their fonts / colours / outline / shadow, CapCut captions as a caption track. Tried on all 35 projects on the owner's PC.
+- [x] Found and fixed on the way: old Sinhala fonts such as 4u-Basuru were never loaded by the text engine (empty names in the font file).
+- [ ] Not imported (listed to the user after each import): CapCut effects, filters, transitions, animations, keyframes, stickers, speed curves, letter spacing, shapes other than rectangles. Possible next steps: map CapCut animations / keyframes / transitions to vidzcut ones.
+
 ## Phase 8 — Motion graphics extras
 - [ ] Graph editor, motion paths on canvas, parenting/null layers
 - [ ] Motion blur, wiggle, animation-preset saving

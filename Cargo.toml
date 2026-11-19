@@ -10,6 +10,7 @@ members = [
     "crates/vz-audio",
     "crates/vz-export",
     "crates/vz-presets",
+    "crates/vz-import",
     "crates/vz-ui",
     "crates/vidzcut",
     "spikes/sinhala",

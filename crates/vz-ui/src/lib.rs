@@ -2,6 +2,7 @@
 
 mod app;
 mod audio_jobs;
+mod capcut_dialog;
 mod dev;
 mod editor;
 mod export_dialog;

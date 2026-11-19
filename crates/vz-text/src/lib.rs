@@ -11,6 +11,7 @@
 
 pub mod animate;
 mod curve;
+mod fontfile;
 mod mask;
 pub mod rich;
 
@@ -18,6 +19,7 @@ use cosmic_text::{
     Align, Attrs, Buffer, Color, Family, FontSystem, Metrics, Shaping, Style, SwashCache,
     SwashContent, Weight, Wrap, fontdb,
 };
+pub use fontfile::{family_of_file, line_ratio_of_file};
 use mask::Mask;
 use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
@@ -108,6 +110,7 @@ impl TextEngine {
                 db.load_font_data(data.to_vec());
             }
             db.load_system_fonts();
+            fontfile::register_skipped(&mut db);
             db.set_sans_serif_family(DEFAULT_FONT);
             tracing::info!(
                 "fonts ready: {} faces in {:?}",
@@ -132,6 +135,33 @@ impl TextEngine {
                 .filter(|n| !BUNDLED_FAMILIES.contains(&n.as_str())),
         );
         out
+    }
+
+    /// Is the font file at `path` one of the faces this engine knows?
+    pub fn has_face_file(&mut self, path: &std::path::Path) -> bool {
+        let key = |p: &std::path::Path| p.to_string_lossy().replace('\\', "/").to_lowercase();
+        let want = key(path);
+        self.system().db().faces().any(|f| match &f.source {
+            fontdb::Source::File(p) | fontdb::Source::SharedFile(p, _) => key(p) == want,
+            fontdb::Source::Binary(_) => false,
+        })
+    }
+
+    /// The family name this engine knows the font file at `path` by (what to put in `TextStyle::font`). Falls back to
+    /// the name written inside the file when the font is not installed.
+    pub fn family_of_path(&mut self, path: &std::path::Path) -> Option<String> {
+        let key = |p: &std::path::Path| p.to_string_lossy().replace('\\', "/").to_lowercase();
+        let want = key(path);
+        let known = self
+            .system()
+            .db()
+            .faces()
+            .find(|f| match &f.source {
+                fontdb::Source::File(p) | fontdb::Source::SharedFile(p, _) => key(p) == want,
+                fontdb::Source::Binary(_) => false,
+            })
+            .and_then(|f| f.families.first().map(|(name, _)| name.clone()));
+        known.or_else(|| family_of_file(path))
     }
 
     /// The weight to ask `family` for when normal (or bold) text is wanted: the weight of its face that is closest.
@@ -991,3 +1021,23 @@ impl Layers {
 mod tests;
 #[cfg(test)]
 mod tests_rich;
+
+impl TextEngine {
+    /// Every installed face as (file path, family names), for diagnostics.
+    #[cfg(test)]
+    pub(crate) fn faces_for_diagnostics(&mut self) -> Vec<(String, Vec<String>)> {
+        self.system()
+            .db()
+            .faces()
+            .map(|f| {
+                let path = match &f.source {
+                    fontdb::Source::File(p) | fontdb::Source::SharedFile(p, _) => {
+                        p.display().to_string()
+                    }
+                    fontdb::Source::Binary(_) => "(built in)".to_owned(),
+                };
+                (path, f.families.iter().map(|(n, _)| n.clone()).collect())
+            })
+            .collect()
+    }
+}
