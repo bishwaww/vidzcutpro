@@ -2,7 +2,7 @@
   "enabled": true,
   "productName": "vidzcut",
   "identifier": "app.vidzcut.editor",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A video editor with first-class Sinhala and Tamil text.",
   "longDescription": "vidzcut is a desktop video editor: multi-track timeline, text with correct Sinhala and Tamil shaping, effects, colour, audio tools and export.",
   "authors": ["vidzcut"],

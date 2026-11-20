@@ -117,3 +117,8 @@ Legend: `[x]` done · `[ ]` to do · `[-]` skipped on purpose (reason given)
 ## Out of scope in this version (spec §0)
 - [-] Auto captions / speech-to-text (plugin hook only)
 - [-] AI background removal, cutout, retouch, avatars, text-to-speech, AI colour match, smart suggestions, clipper, auto reframe, AI effects, copyright check
+
+## Close goes home + Update button (2026-11-20) — done
+- Window X in the editor goes to the home screen (asks about unsaved changes); X on the home screen quits.
+- Update button (home + Help menu): checks GitHub releases of bishwaww/vidzcutpro, downloads and starts the installer. Version 0.1.1.
+- Not done: automatic checks at start-up (kept manual on purpose), signed installers, update for macOS.

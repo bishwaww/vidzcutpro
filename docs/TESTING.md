@@ -315,3 +315,9 @@ Not made (and why): Draw Text (letters drawn as a pen line), Font Change, text b
 5. Captions made in CapCut arrive on a caption track: open the Captions tab and apply one of the 21 caption styles.
 6. Your CapCut project is only read. Open it in CapCut afterwards: it must be exactly as before.
 7. Tell me what looks different from CapCut. Known: CapCut's effects, filters, transitions, animations and keyframes are not imported (the window says how many); CapCut fonts that are not installed on this PC (for example Poppins) are replaced by another font.
+
+## Close goes home, and the Update button (2026-11-20) — what to check
+1. Open or create a project, then click the window's **X**. With no unsaved changes you land on the **home screen** (the program stays open).
+2. Make a change (e.g. add text), click **X** again: a window asks "Save your changes?". **Save** saves and goes home, **Don't save** goes home without saving, **Cancel** stays in the editor. **Menu → File → Back to home** asks the same.
+3. On the home screen click **X**: the program closes.
+4. Home screen, bottom-left: click **Update**. It says it is looking, then either "vidzcut is up to date" or "Version … is ready" with **Download and install**. After the download, **Install now** closes vidzcut and opens the installer. (Also in the editor: Menu → Help → Update vidzcut….)

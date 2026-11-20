@@ -13,6 +13,7 @@ mod proxies;
 mod settings;
 mod settings_window;
 mod theme;
+mod update;
 mod waveforms;
 
 /// Open the vidzcut window and run until it is closed.

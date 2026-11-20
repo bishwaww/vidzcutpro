@@ -3396,7 +3396,7 @@ checksum = "e3a9fe34e3e7a50316060351f37187a3f546bce95496156754b601a5fa71b76e"
 
 [[package]]
 name = "sinhala-spike"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "cosmic-text",
  "eframe",
@@ -4005,7 +4005,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vidzcut"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "directories",
  "tracing",
@@ -4017,7 +4017,7 @@ dependencies = [
 
 [[package]]
 name = "vz-anim"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -4025,7 +4025,7 @@ dependencies = [
 
 [[package]]
 name = "vz-audio"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "cpal",
  "crossbeam-channel",
@@ -4039,7 +4039,7 @@ dependencies = [
 
 [[package]]
 name = "vz-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -4050,7 +4050,7 @@ dependencies = [
 
 [[package]]
 name = "vz-export"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "color_quant",
  "ffmpeg-next",
@@ -4068,7 +4068,7 @@ dependencies = [
 
 [[package]]
 name = "vz-import"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "image",
  "serde_json",
@@ -4083,7 +4083,7 @@ dependencies = [
 
 [[package]]
 name = "vz-media"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "crossbeam-channel",
  "ffmpeg-next",
@@ -4095,7 +4095,7 @@ dependencies = [
 
 [[package]]
 name = "vz-presets"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "vz-anim",
  "vz-core",
@@ -4103,7 +4103,7 @@ dependencies = [
 
 [[package]]
 name = "vz-render"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "image",
  "rayon",
@@ -4118,7 +4118,7 @@ dependencies = [
 
 [[package]]
 name = "vz-text"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "cosmic-text",
  "image",
@@ -4131,7 +4131,7 @@ dependencies = [
 
 [[package]]
 name = "vz-ui"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "chrono",
  "crossbeam-channel",
@@ -4156,7 +4156,7 @@ dependencies = [
 
 [[package]]
 name = "vz-vector"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "tiny-skia",
  "vz-core",

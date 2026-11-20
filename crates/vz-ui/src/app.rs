@@ -39,7 +39,7 @@ enum Screen {
 enum Dialog {
     /// Offer to bring back work from a crash.
     Recover(Vec<RecoveryItem>),
-    /// The window was asked to close while there are unsaved changes.
+    /// The project is being closed (window X or "Back to home") while there are unsaved changes.
     Quit,
     /// Something went wrong that the user should read about: what happened, in plain words, and the technical details.
     Problem {
@@ -51,6 +51,8 @@ enum Dialog {
     CapCut(Box<crate::capcut_dialog::CapCutDialog>),
     /// What an import from another editor left out.
     ImportReport(Vec<String>),
+    /// Checking for a newer vidzcut, downloading and installing it.
+    Update(Box<crate::update::UpdateDialog>),
 }
 
 pub struct VidzApp {
@@ -95,7 +97,8 @@ pub struct VidzApp {
     saved_at: Option<String>,
     dialog: Option<Dialog>,
     export: Option<ExportDialog>,
-    allow_close: bool,
+    /// Set when the program really must quit (after starting an update): the window X then does not go home.
+    quitting: bool,
 }
 
 fn config_dir() -> Option<PathBuf> {
@@ -176,7 +179,7 @@ impl VidzApp {
             saved_at: None,
             dialog: (!recovered.is_empty()).then_some(Dialog::Recover(recovered)),
             export: None,
-            allow_close: false,
+            quitting: false,
         };
         // developer switch: import files at start-up
         for path in app.dev.import.clone() {
@@ -625,10 +628,7 @@ impl VidzApp {
 
     fn run_action(&mut self, action: Action) {
         match action {
-            Action::GoHome => {
-                self.pause();
-                self.screen = Screen::Home;
-            }
+            Action::GoHome => self.ask_to_close_project(),
             Action::SetLayout(preset) => {
                 self.settings.layout = preset;
                 self.settings_dirty = true;
@@ -643,6 +643,7 @@ impl VidzApp {
             Action::SaveAs => self.save(true),
             Action::OpenDialog => self.open_dialog(),
             Action::ImportCapCut => self.open_capcut_list(),
+            Action::CheckUpdate => self.open_update(),
             Action::TogglePlay => self.toggle_play(),
             Action::Export => {
                 if self.doc.project.duration() == 0 {
@@ -730,6 +731,40 @@ impl VidzApp {
         }
     }
 
+    fn open_update(&mut self) {
+        self.dialog = Some(Dialog::Update(Box::new(crate::update::UpdateDialog::new())));
+    }
+
+    /// The update window: looks on GitHub, downloads, and on "Install now" starts the installer and quits.
+    fn show_update(&mut self, ctx: &egui::Context) {
+        use crate::update::Outcome;
+        let Some(Dialog::Update(window)) = &mut self.dialog else {
+            return;
+        };
+        match window.show(ctx) {
+            Outcome::None => {}
+            Outcome::Close => self.dialog = None,
+            Outcome::Install(path) => {
+                if matches!(self.screen, Screen::Editor) && self.doc.is_dirty() {
+                    self.dialog = None;
+                    self.editor
+                        .say("Save your project first (Ctrl+S), then press Update again.");
+                    return;
+                }
+                match crate::update::start_installer(&path) {
+                    Ok(()) => {
+                        if let Some(dir) = recovery_dir() {
+                            self.doc.discard_autosave(&dir);
+                        }
+                        self.quitting = true;
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    }
+                    Err(e) => self.problem("The update could not start", &e, &e),
+                }
+            }
+        }
+    }
+
     fn problem(&mut self, title: &str, plain: &str, details: &str) {
         tracing::error!("{title}: {details}");
         self.dialog = Some(Dialog::Problem {
@@ -743,6 +778,10 @@ impl VidzApp {
     fn show_dialog(&mut self, ctx: &egui::Context) {
         if matches!(self.dialog, Some(Dialog::CapCut(_))) {
             self.show_capcut(ctx);
+            return;
+        }
+        if matches!(self.dialog, Some(Dialog::Update(_))) {
+            self.show_update(ctx);
             return;
         }
         let Some(dialog) = &self.dialog else { return };
@@ -832,7 +871,7 @@ impl VidzApp {
                     self.dialog = None;
                 }
             }
-            Dialog::CapCut(_) => {}
+            Dialog::CapCut(_) | Dialog::Update(_) => {}
             Dialog::ImportReport(notes) => {
                 let notes = notes.clone();
                 let mut close = false;
@@ -887,12 +926,12 @@ impl VidzApp {
                     Some(1) => {
                         self.save(false);
                         if !self.doc.is_dirty() {
-                            self.finish_closing(ctx);
+                            self.close_project();
                         } else {
                             self.dialog = None;
                         }
                     }
-                    Some(2) => self.finish_closing(ctx),
+                    Some(2) => self.close_project(),
                     Some(_) => self.dialog = None,
                     None => {}
                 }
@@ -900,23 +939,33 @@ impl VidzApp {
         }
     }
 
-    /// Clean exit: remove the recovery copy (there is nothing to recover) and close.
-    fn finish_closing(&mut self, ctx: &egui::Context) {
+    /// Leave the project and show the home screen (the recovery copy is removed: there is nothing to recover).
+    fn close_project(&mut self) {
         if let Some(dir) = recovery_dir() {
             self.doc.discard_autosave(&dir);
         }
-        self.allow_close = true;
+        self.pause();
         self.dialog = None;
-        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        self.screen = Screen::Home;
     }
 
+    /// Leave the editor; asks about unsaved changes first.
+    fn ask_to_close_project(&mut self) {
+        if self.doc.is_dirty() {
+            self.dialog = Some(Dialog::Quit);
+        } else {
+            self.close_project();
+        }
+    }
+
+    /// Closing the window (the X) while editing goes back to the home screen. Closing it on the home screen quits.
     fn handle_close_request(&mut self, ctx: &egui::Context) {
-        if !ctx.input(|i| i.viewport().close_requested()) || self.allow_close {
+        if !ctx.input(|i| i.viewport().close_requested()) || self.quitting {
             return;
         }
-        if matches!(self.screen, Screen::Editor) && self.doc.is_dirty() && !self.dev.scripted() {
+        if matches!(self.screen, Screen::Editor) && !self.dev.scripted() {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
-            self.dialog = Some(Dialog::Quit);
+            self.ask_to_close_project();
         } else if let Some(dir) = recovery_dir() {
             self.doc.discard_autosave(&dir);
         }
@@ -1042,6 +1091,7 @@ impl eframe::App for VidzApp {
                     home::Action::OpenSettings => self.editor.settings_ui.open = true,
                     home::Action::OpenDialog => self.open_dialog(),
                     home::Action::ImportCapCut => self.open_capcut_list(),
+                    home::Action::CheckUpdate => self.open_update(),
                     home::Action::Open(path) => self.open_path(&path),
                     home::Action::RemoveRecent(path) => {
                         self.settings.recent.retain(|p| *p != path);

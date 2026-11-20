@@ -6,7 +6,7 @@
 powershell -ExecutionPolicy Bypass -File scripts\package-windows.ps1
 ```
 
-Result: `dist\vidzcut_0.1.0_x64-setup.exe` (about 57 MB). The script makes the licence list, builds the release program and runs
+Result: `dist\vidzcut_<version>_x64-setup.exe` (about 57 MB). The script makes the licence list, builds the release program and runs
 `cargo packager` with `packaging\installer.json`.
 
 One-time: `cargo install cargo-packager --locked` (it downloads the NSIS installer maker the first time it runs).
@@ -38,3 +38,11 @@ Notes
 A Mac is needed. Plan: build an LGPL FFmpeg 9 for macOS (the Homebrew one may be GPL and must not be shipped), then
 `cargo packager --formats dmg` with a config like `packaging/installer.json` (icons `icon.png`, the FFmpeg dylibs as resources). Unsigned Mac apps need
 right-click → Open the first time. Hardware decoding (VideoToolbox) and the macOS build have never been run.
+
+## Publishing an update (what the "Update" button looks for)
+The **Update** button (home screen, and Menu → Help → Update vidzcut…) asks `https://api.github.com/repos/bishwaww/vidzcutpro/releases/latest`
+(`crates/vz-ui/src/update.rs`, uses the `curl.exe` that comes with Windows). It offers a release when its tag (for example `v0.1.2`) is a higher
+number than the program's own version, downloads the asset whose name ends in `-setup.exe` (only from
+`https://github.com/bishwaww/vidzcutpro/releases/download/`), checks the size, and on "Install now" starts it and quits.
+To publish: bump the version (see Notes above), run `scripts\package-windows.ps1`, then create a GitHub release with tag `v<version>` and upload
+`dist\vidzcut_<version>_x64-setup.exe` to it. `VIDZCUT_FAKE_VERSION=0.0.1` makes a program pretend to be old, for testing the button.

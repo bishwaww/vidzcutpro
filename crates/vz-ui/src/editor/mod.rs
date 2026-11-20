@@ -196,6 +196,7 @@ impl EditorState {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Action {
     GoHome,
+    CheckUpdate,
     SetLayout(LayoutPreset),
     ResetLayout,
     ImportDialog,

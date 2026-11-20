@@ -28,6 +28,8 @@ pub enum Action {
     OpenDialog,
     /// Open the list of CapCut projects.
     ImportCapCut,
+    /// Look for a newer vidzcut.
+    CheckUpdate,
     Open(PathBuf),
     RemoveRecent(PathBuf),
 }
@@ -71,6 +73,18 @@ pub fn show(ui: &mut egui::Ui, logo: &egui::TextureHandle, recent: &[RecentItem]
                             .small(),
                     );
                 });
+                ui.add_space(6.0);
+                egui::Frame::new()
+                    .inner_margin(egui::Margin::symmetric(16, 0))
+                    .show(ui, |ui| {
+                        if ui
+                            .add_sized([ui.available_width(), 34.0], egui::Button::new("Update"))
+                            .on_hover_text("Look for a newer version of vidzcut")
+                            .clicked()
+                        {
+                            action = Action::CheckUpdate;
+                        }
+                    });
             });
         });
 

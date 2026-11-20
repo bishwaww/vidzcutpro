@@ -149,6 +149,10 @@ pub fn show(ui: &mut egui::Ui, ctx: &mut Ctx<'_>) {
                     crate::export_dialog::open_folder(&dir);
                     ui.close();
                 }
+                if ui.button("Update vidzcut…").clicked() {
+                    ctx.actions.push(Action::CheckUpdate);
+                    ui.close();
+                }
                 ui.label(
                     RichText::new(format!("vidzcut {}", env!("CARGO_PKG_VERSION")))
                         .color(theme::MUTED),
